@@ -6,7 +6,6 @@ __pycache__/
 *.db
 uploads/
 node_modules/
-dist/
 .vite/
 *.egg-info/
 .DS_Store

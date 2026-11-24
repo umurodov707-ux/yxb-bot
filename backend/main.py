@@ -114,7 +114,11 @@ async def health():
 
 
 # ── Frontend SPA — OXIRIDA ro'yxatdan o'tishi shart ──────────────────────────
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+# Avval backend/static ni, topilmasa frontend/dist ni tekshiradi
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "static")
+if not os.path.isdir(FRONTEND_DIST):
+    FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
 if os.path.isdir(FRONTEND_DIST):
     from fastapi.responses import FileResponse
     _assets_path = os.path.join(FRONTEND_DIST, "assets")
