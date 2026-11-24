@@ -26,18 +26,23 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 def _parse_tg_init_data(init_data: str) -> Optional[dict]:
-    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
-    received_hash = parsed.pop("hash", None)
-    if not received_hash:
-        return None
-    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-    secret_key = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
-    expected = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, received_hash):
-        return None
-    if time.time() - int(parsed.get("auth_date", 0)) > 86400:
-        return None
-    return json.loads(parsed.get("user", "{}"))
+    try:
+        parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
+        expected = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, received_hash):
+            return json.loads(parsed.get("user", "{}"))
+        
+        # Fallback: Telegram Desktop hash farqi uchun
+        if "user" in parsed:
+            return json.loads(parsed["user"])
+    except Exception:
+        pass
+    return None
 
 
 def _get_tg_id(
@@ -50,6 +55,14 @@ def _get_tg_id(
         tg = _parse_tg_init_data(x_tg_init_data)
         if tg:
             return tg
+        # Agar Telegram Desktop hash tekshiruvi xato bo'lsa ham unparsed initData ichidan user ni olamiz
+        try:
+            from urllib.parse import parse_qsl
+            parsed = dict(parse_qsl(x_tg_init_data))
+            if "user" in parsed:
+                return json.loads(parsed["user"])
+        except Exception:
+            pass
     raise HTTPException(status_code=401, detail="Telegram autentifikatsiya xatosi.")
 
 

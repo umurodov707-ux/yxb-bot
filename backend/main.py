@@ -45,6 +45,31 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("DB initialized / seeded.")
 
+    # Admin foydalanuvchini har doim admin qilib approved qilib qo'yish
+    from app.database import AsyncSessionLocal
+    from app.models import User, UserRole, RegistrationStatus, Department
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        for admin_tg_id in settings.admin_ids_list:
+            res = await session.execute(select(User).where(User.telegram_id == admin_tg_id))
+            u = res.scalars().first()
+            if not u:
+                dept_res = await session.execute(select(Department).limit(1))
+                d = dept_res.scalars().first()
+                u = User(
+                    telegram_id=admin_tg_id,
+                    full_name="Bosh Admin",
+                    position="Boshliq / Admin",
+                    role=UserRole.admin,
+                    reg_status=RegistrationStatus.approved,
+                    department_id=d.id if d else None,
+                )
+                session.add(u)
+            else:
+                u.role = UserRole.admin
+                u.reg_status = RegistrationStatus.approved
+            await session.commit()
+
     # Start polling in background (for dev).
     # In production use Webhook instead.
     if settings.BOT_TOKEN != "CHANGEME":

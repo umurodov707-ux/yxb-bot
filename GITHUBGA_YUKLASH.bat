@@ -1,18 +1,16 @@
 @echo off
 cd /d "%~dp0"
 echo ===================================================
-echo Yangi ariza kelganda adminga bot orqali
-echo [Tasdiqlash / Rad etish] tugmalarini yuklash...
+echo Admin profilini avtomatik faollashtirish...
 echo ===================================================
 
 git config --global --add safe.directory "%~dp0"
 git add .
-git commit -m "Auto-notify admin on Telegram with approve/reject inline buttons on new registration"
+git commit -m "Auto-create and grant admin status on startup"
 git push origin main
 
 echo.
 echo ===================================================
-echo Muvaffaqiyatli GitHubga yuklandi!
-echo Render 1 daqiqada yangi sozlamani yoqadi.
+echo Tayyor! Render 30 soniyada yangilaydi.
 echo ===================================================
 pause

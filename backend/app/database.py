@@ -74,3 +74,19 @@ async def seed_departments():
             session.add(d)
 
         await session.commit()
+
+        # Admin foydalanuvchini avtomatik approved qilib qo'yish
+        from .models import User, UserRole, RegistrationStatus
+        for admin_tg_id in settings.admin_ids_list:
+            res = await session.execute(select(User).where(User.telegram_id == admin_tg_id))
+            if not res.scalars().first():
+                admin_user = User(
+                    telegram_id=admin_tg_id,
+                    full_name="Bosh Admin",
+                    position="Boshliq / Admin",
+                    role=UserRole.admin,
+                    reg_status=RegistrationStatus.approved,
+                    department_id=parent_map["FOYDALANISH"].id,
+                )
+                session.add(admin_user)
+        await session.commit()
