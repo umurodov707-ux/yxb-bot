@@ -263,6 +263,9 @@ async def add_file(
         tg_file_id=tg_file_id,
     )
     db.add(f)
+    if local_path:
+        from .storage import save_blob
+        await save_blob(db, local_path)
     await db.commit()
     await db.refresh(f)
     return f

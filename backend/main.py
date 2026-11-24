@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio, hashlib, hmac, logging, os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -132,9 +132,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static file serving (uploaded files)
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
+
+@app.get("/uploads/{stored}", include_in_schema=False)
+async def serve_upload(stored: str):
+    from fastapi.responses import FileResponse
+    from app.storage import resolve_file
+
+    path = await resolve_file(stored)
+    if not path:
+        raise HTTPException(status_code=404)
+    return FileResponse(path)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 from app.api.auth_router import router as auth_router
@@ -174,9 +183,10 @@ async def download_file(stored: str, name: str, inline: bool = False):
     from fastapi.responses import FileResponse
     import mimetypes
 
-    stored = os.path.basename(stored)
-    path = os.path.join(settings.UPLOAD_DIR, stored)
-    if not stored or not os.path.isfile(path):
+    from app.storage import resolve_file
+
+    path = await resolve_file(stored)
+    if not path:
         raise HTTPException(status_code=404)
     media_type = mimetypes.guess_type(name)[0] or mimetypes.guess_type(stored)[0] or "application/octet-stream"
     return FileResponse(

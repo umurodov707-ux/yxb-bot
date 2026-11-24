@@ -6,7 +6,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, Boolean,
-    DateTime, Enum as SAEnum, ForeignKey, JSON, func,
+    DateTime, Enum as SAEnum, ForeignKey, JSON, LargeBinary, func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -130,6 +130,16 @@ class Record(Base):
 # ---------------------------------------------------------------------------
 # Attached files
 # ---------------------------------------------------------------------------
+class FileBlob(Base):
+    """Fayl mazmuni bazada — Render diski tozalanganda ham fayl yo'qolmaydi."""
+    __tablename__ = "file_blobs"
+
+    id = Column(Integer, primary_key=True)
+    stored_name = Column(String(255), unique=True, index=True, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class AttachedFile(Base):
     __tablename__ = "attached_files"
 

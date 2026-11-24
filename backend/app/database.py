@@ -2,7 +2,27 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from .config import settings
 from .models import Base
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
+def _engine_args(url: str):
+    """Neon/Render bergan postgres:// manzilini asyncpg formatiga keltiradi."""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if not url.startswith("postgresql"):
+        return url, {}
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    base, _, query = url.partition("?")
+    params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+    connect_args = {}
+    if params.pop("sslmode", None) in ("require", "verify-ca", "verify-full"):
+        connect_args["ssl"] = True
+    params.pop("channel_binding", None)
+    if params:
+        base += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+    return base, {"connect_args": connect_args, "pool_pre_ping": True, "pool_recycle": 300}
+
+
+_url, _extra = _engine_args(settings.DATABASE_URL)
+engine = create_async_engine(_url, echo=False, future=True, **_extra)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

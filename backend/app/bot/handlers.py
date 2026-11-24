@@ -149,6 +149,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from ..database import AsyncSessionLocal
 from ..models import User, Record, AttachedFile, RecordType, RecordStatus, RegistrationStatus
+from ..storage import save_blob
 
 log = logging.getLogger(__name__)
 
@@ -209,6 +210,7 @@ async def _append_to_album(msg: Message, record_id: int) -> None:
             record_id=record_id, original_name=orig_name, mime_type=mime,
             file_size=size or os.path.getsize(local_p), local_path=local_p, tg_file_id=file_id,
         ))
+        await save_blob(db, local_p)
         await db.commit()
 
 
@@ -308,6 +310,7 @@ async def _save_message(msg: Message) -> int | None:
                 local_path=local_p,
                 tg_file_id=file_id,
             ))
+            await save_blob(db, local_p)
 
         await db.commit()
         record_id = record.id
