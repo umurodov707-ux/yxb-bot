@@ -3,7 +3,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { uz } from 'date-fns/locale';
 import {
   Search, SlidersHorizontal, Send, Paperclip, X, Inbox, MessageSquareText,
-  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2, ArrowLeft,
+  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2, ArrowLeft, Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getRecords, deleteRecord, createRecord, getDeptFlat, markDeptSeen } from '../api';
@@ -23,7 +23,7 @@ function dayLabel(d: Date) {
   return format(d, 'd MMMM yyyy', { locale: uz });
 }
 
-export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?: boolean; fixedDeptId?: number }) {
+export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/admin/feed' }: { embedded?: boolean; fixedDeptId?: number; backTo?: string }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const navigate = useNavigate();
@@ -51,8 +51,8 @@ export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?:
   const lastIdRef = useRef(0);
 
   useEffect(() => {
-    if (isAdmin) getDeptFlat().then(r => setDepts(r.data)).catch(() => {});
-  }, [isAdmin]);
+    if (isAdmin || fixedDeptId) getDeptFlat().then(r => setDepts(r.data)).catch(() => {});
+  }, [isAdmin, fixedDeptId]);
 
   const nearBottom = () => window.innerHeight + window.scrollY > document.body.scrollHeight - 240;
   const scrollBottom = (smooth = true) =>
@@ -173,7 +173,9 @@ export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?:
   };
 
   const activeFilters = [dateFrom, dateTo, fixedDeptId ? '' : deptId].filter(Boolean).length;
-  const deptName = depts.find(d => d.id === fixedDeptId)?.name;
+  const fixedDept = depts.find(d => d.id === fixedDeptId);
+  const deptName = fixedDept?.name;
+  const readOnlyForMe = !isAdmin && !!fixedDept?.read_only_broadcast;
 
   return (
     <>
@@ -182,11 +184,11 @@ export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?:
       )}
 
       {fixedDeptId && (
-        <div className="chat-head">
-          <button className="icon-btn" onClick={() => navigate('/admin/feed')} aria-label="Orqaga"><ArrowLeft size={19} /></button>
+        <div className={`chat-head${isAdmin ? '' : ' no-nav'}`}>
+          <button className="icon-btn" onClick={() => navigate(backTo)} aria-label="Orqaga"><ArrowLeft size={19} /></button>
           <div style={{ minWidth: 0 }}>
             <div className="chat-head-name">{deptName ?? 'Boʻlim'}</div>
-            <div className="text-xs text-mute">{records.length} ta yozuv · faqat shu boʻlim</div>
+            <div className="text-xs text-mute">{records.length} ta yozuv · {readOnlyForMe ? 'faqat oʻqish uchun' : 'faqat shu boʻlim'}</div>
           </div>
         </div>
       )}
@@ -305,7 +307,9 @@ export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?:
 
       <div className="composer">
         <div className="composer-inner">
-          {isAdmin && !deptId ? (
+          {readOnlyForMe ? (
+            <div className="ro-note"><Lock size={15} /> Bu boʻlim faqat oʻqish uchun — eʼlonlarni rahbariyat joylaydi</div>
+          ) : isAdmin && !deptId ? (
             <div className="text-sm text-mute" style={{ textAlign: 'center', padding: '6px 0' }}>
               Yozish uchun filtrdan boʻlim tanlang yoki <b>Yuborish</b> boʻlimidan foydalaning
             </div>

@@ -90,6 +90,8 @@ export interface DeptSummary {
   name: string;
   code: string;
   parent_id: number | null;
+  sort_order: number;
+  read_only: boolean;
   total: number;
   today: number;
   unread: number;

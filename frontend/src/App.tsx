@@ -5,6 +5,13 @@ import RegisterPage from './pages/RegisterPage';
 import FeedPage from './pages/FeedPage';
 import AdminPage from './pages/admin/AdminPage';
 import PendingPage from './pages/PendingPage';
+import { EmployeeHome } from './pages/DeptHome';
+import { useParams } from 'react-router-dom';
+
+function UserDeptFeed() {
+  const { deptId } = useParams();
+  return <FeedPage key={deptId} fixedDeptId={Number(deptId)} backTo="/" />;
+}
 
 function AppRoutes() {
   const { user, loading, error, refetch } = useAuth();
@@ -34,7 +41,8 @@ function AppRoutes() {
         </>
       ) : (
         <>
-          <Route path="/" element={<FeedPage />} />
+          <Route path="/" element={<EmployeeHome />} />
+          <Route path="/d/:deptId" element={<UserDeptFeed />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       )}

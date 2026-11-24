@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, NavLink, useParams } from 'react-router-dom';
-import DeptListPage from './DeptListPage';
+import { AdminDeptHome, DeptGroupPage } from '../DeptHome';
 import { MessagesSquare, UserPlus, Users, Megaphone, BarChart3 } from 'lucide-react';
 import RequestsTab from './RequestsTab';
 import UsersTab from './UsersTab';
@@ -53,8 +53,9 @@ export default function AdminPage() {
       </AppHeader>
 
       <Routes>
-        <Route path="/" element={<DeptListPage />} />
-        <Route path="/feed" element={<DeptListPage />} />
+        <Route path="/" element={<AdminDeptHome />} />
+        <Route path="/feed" element={<AdminDeptHome />} />
+        <Route path="/feed/g/:code" element={<DeptGroupPage />} />
         <Route path="/feed/:deptId" element={<DeptFeed />} />
         <Route path="/all" element={<FeedPage embedded />} />
         <Route path="/requests" element={<RequestsTab />} />

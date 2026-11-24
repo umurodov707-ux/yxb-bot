@@ -63,9 +63,11 @@ async def list_records(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Oddiy xodim faqat o'z bo'limini ko'radi
+    # Oddiy xodim o'z bo'limini va umumiy (faqat o'qish) bo'limlarni ko'radi
     if user.role != UserRole.admin:
-        department_id = user.department_id
+        dept = await db.get(Department, department_id) if department_id else None
+        if not (dept and dept.read_only_broadcast):
+            department_id = user.department_id
 
     recs = await get_records(
         db, department_id, record_type, date_from, date_to, keyword, limit, offset
@@ -126,8 +128,9 @@ async def create_new_record(
 @router.get("/summary")
 async def departments_summary(
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
+    is_admin = user.role == UserRole.admin
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     admin_ids = select(User.id).where(User.role == UserRole.admin)
 
@@ -158,6 +161,8 @@ async def departments_summary(
         last_map = {r.department_id: r for r in res.scalars().all()}
 
     depts = (await db.execute(select(Department).order_by(Department.sort_order, Department.id))).scalars().all()
+    if not is_admin:
+        depts = [d for d in depts if d.id == user.department_id or d.read_only_broadcast]
     out = []
     for d in depts:
         total, today_cnt, unread, _ = stats.get(d.id, (0, 0, 0, None))
@@ -167,9 +172,11 @@ async def departments_summary(
             "name": d.name,
             "code": d.code,
             "parent_id": d.parent_id,
+            "sort_order": d.sort_order,
+            "read_only": bool(d.read_only_broadcast),
             "total": total or 0,
             "today": int(today_cnt or 0),
-            "unread": int(unread or 0),
+            "unread": int(unread or 0) if is_admin else 0,
             "last_title": last.title if last else None,
             "last_author": last.author.full_name if last and last.author else None,
             "last_type": last.record_type.value if last else None,
