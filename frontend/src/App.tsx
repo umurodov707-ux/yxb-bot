@@ -28,7 +28,7 @@ function AppRoutes() {
     <Routes>
       {user.role === 'admin' ? (
         <>
-          <Route path="/" element={<Navigate to="/admin/requests" replace />} />
+          <Route path="/" element={<Navigate to="/admin/feed" replace />} />
           <Route path="/admin/*" element={<AdminPage />} />
           <Route path="/feed" element={<FeedPage />} />
         </>

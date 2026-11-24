@@ -1,12 +1,13 @@
 @echo off
 cd /d "%~dp0"
 echo ===================================================
-echo Broadcast va xabar yuborishni to'g'irlash...
+echo Xodimlar tashlagan rasmlar va xabarlarni
+echo Mini App Lentasida (birinchi bo'limda) ko'rsatish...
 echo ===================================================
 
 git config --global --add safe.directory "%~dp0"
 git add .
-git commit -m "Fix record relationship serialization on broadcast"
+git commit -m "Set Chat/Lenta as the primary first tab in Admin Mini App"
 git push origin main
 
 echo.
