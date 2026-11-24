@@ -15,7 +15,7 @@ export default function AppHeader({ subtitle, onRefresh, refreshing, children }:
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <div className="logo">ЙХБ</div>
+        <img className="logo-img" src="/logo.jpg" alt="Yoʻl xoʻjaligi boshqarmasi" width={44} height={44} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="app-title">Yoʻl xoʻjaligi boshqarmasi</div>
           <div className="app-sub">

@@ -207,6 +207,10 @@ if os.path.isdir(FRONTEND_DIST):
     @app.get("/", include_in_schema=False)
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str = ""):
+        root = os.path.realpath(FRONTEND_DIST)
+        candidate = os.path.realpath(os.path.join(root, full_path))
+        if full_path and candidate.startswith(root + os.sep) and os.path.isfile(candidate):
+            return FileResponse(candidate)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 

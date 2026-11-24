@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+import logging
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -28,11 +30,14 @@ async def list_requests(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
+    from sqlalchemy import select
+    from ..models import Department
     reqs = await get_pending_requests(db)
+    names = dict((await db.execute(select(Department.id, Department.name))).all())
     result = []
     for r in reqs:
         out = RegistrationRequestOut.model_validate(r)
-        # attach department name via relationship (lazy loaded via select)
+        out.department_name = names.get(r.department_id)
         result.append(out)
     return result
 
@@ -40,6 +45,7 @@ async def list_requests(
 @router.post("/requests/review", response_model=MsgResponse)
 async def review_request(
     body: ApproveRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -49,6 +55,24 @@ async def review_request(
     )
     if not rr:
         raise HTTPException(status_code=404, detail="Ariza topilmadi.")
+    bot = getattr(request.app.state, "bot", None)
+    if bot:
+        from ..bot.keyboards import main_menu_kb
+        from ..config import settings
+        try:
+            if body.approve:
+                await bot.send_message(
+                    rr.telegram_id,
+                    "✅ <b>Arizangiz tasdiqlandi!</b>\n\nEndi Mini App'ni ochib ishlashingiz mumkin.",
+                    reply_markup=main_menu_kb(settings.WEBAPP_URL),
+                )
+            else:
+                await bot.send_message(
+                    rr.telegram_id,
+                    "❌ Arizangiz rad etildi." + (f"\nSabab: {body.rejection_reason}" if body.rejection_reason else ""),
+                )
+        except Exception:
+            logging.getLogger(__name__).exception("Xodimga javob yuborilmadi")
     action = "Tasdiqlandi" if body.approve else "Rad etildi"
     return MsgResponse(msg=f"{action}.")
 

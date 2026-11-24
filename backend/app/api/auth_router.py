@@ -4,11 +4,11 @@ Telegram init-data headerdan foydalanuvchi ma'lumotini oladi,
 DB da tekshiradi va yangi RegistrationRequest yaratadi.
 """
 from __future__ import annotations
-import hashlib, hmac, json, time, urllib.parse
+import hashlib, hmac, json, logging, time, urllib.parse
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -24,6 +24,7 @@ from ..crud import (
 from ..schemas import RegisterRequest, UserOut, MsgResponse
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+logger = logging.getLogger(__name__)
 
 
 def _parse_tg_init_data(init_data: str) -> Optional[dict]:
@@ -123,6 +124,7 @@ async def me(
 @router.post("/register", response_model=MsgResponse, status_code=201)
 async def register(
     body: RegisterRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     tg: dict = Depends(_get_tg_id),
 ):
@@ -144,19 +146,27 @@ async def register(
     if body.department_id not in dept_ids:
         raise HTTPException(status_code=400, detail="Noto'g'ri bo'lim id.")
 
-    # create user (pending) + request
-    await create_user_from_tg(db, tg_id, username, body)
+    if existing:
+        existing.full_name = body.full_name
+        existing.position = body.position
+        existing.phone = body.phone
+        existing.department_id = body.department_id
+        existing.username = username
+        existing.reg_status = RegistrationStatus.pending
+        existing.rejection_reason = None
+        await db.commit()
+    else:
+        await create_user_from_tg(db, tg_id, username, body)
     req = await create_registration_request(db, tg_id, username, body)
 
     # Admin Telegramiga to'g'ridan-to'g'ri Tasdiqlash / Rad etish tugmalari bilan xabar yuborish
     try:
-        from fastapi import Request
         from ..bot.handlers import notify_admins_new_request
-        from ..main import app as main_app
         dept_name = next((d.name for d in all_depts if d.id == body.department_id), "Noma'lum")
-        if hasattr(main_app.state, "bot") and main_app.state.bot:
+        bot = getattr(request.app.state, "bot", None)
+        if bot:
             await notify_admins_new_request(
-                bot=main_app.state.bot,
+                bot=bot,
                 request_id=req.id,
                 full_name=body.full_name,
                 position=body.position,
@@ -164,6 +174,6 @@ async def register(
                 tg_username=username,
             )
     except Exception as e:
-        logger.error(f"Failed to notify admins: {e}")
+        logger.exception("Adminlarga ariza xabari yuborilmadi: %s", e)
 
     return MsgResponse(msg="Arizangiz yuborildi. Admin tasdiqlashini kuting.")

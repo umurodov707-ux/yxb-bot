@@ -124,7 +124,9 @@ async def get_pending_requests(db: AsyncSession) -> List[RegistrationRequest]:
 
 
 async def get_all_users(db: AsyncSession) -> List[User]:
-    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    result = await db.execute(
+        select(User).options(selectinload(User.department)).order_by(User.created_at.desc())
+    )
     return result.scalars().all()
 
 
