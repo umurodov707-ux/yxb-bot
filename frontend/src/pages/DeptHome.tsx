@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, ChevronRight, ArrowLeft, Lock, Paperclip, PenLine } from 'lucide-react';
+import { Search, ChevronRight, ArrowLeft, Lock, Paperclip, PenLine, Crown } from 'lucide-react';
 import { getDeptSummary } from '../api';
 import type { DeptSummary } from '../types';
 import { deptMeta, gradient, unitNumber } from '../lib/deptMeta';
@@ -121,7 +121,7 @@ export function AdminDeptHome() {
                 key={r.department_id} index={r.sort_order} name={r.name} code={r.code}
                 today={r.today} unread={r.unread} readOnly={r.read_only} delay={i * 35}
                 sub={r.last_at ? when(r.last_at) : undefined}
-                onClick={() => nav(`/admin/feed/${r.department_id}`)}
+                onClick={() => nav(r.read_only ? `/admin/feed/${r.department_id}` : `/admin/feed/${r.department_id}/units`)}
               />
             );
           })}
@@ -224,9 +224,17 @@ export function EmployeeHome() {
           <div className="hello-name">{user?.full_name?.split(' ').slice(0, 2).join(' ')}</div>
         </div>
 
-        <div className="section-title">Mening boʻlimim</div>
+        <div className="section-title">
+          Mening boʻlimim {user?.is_dept_head && <span className="head-badge"><Crown size={11} /> Rahbar</span>}
+        </div>
         {loading || !own ? (
           <div className="tile tile-wide skeleton" />
+        ) : user?.is_dept_head ? (
+          <DeptTile
+            wide name={own.name} code={own.code} today={own.today} unread={own.unread}
+            sub="Boʻlinmalardan kelgan xabarlar va bugungi nazorat"
+            onClick={() => nav('/inbox')}
+          />
         ) : (
           <DeptTile
             wide name={own.name} code={own.code} today={own.today} unread={0}

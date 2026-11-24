@@ -104,6 +104,27 @@ async def block_user(
     return MsgResponse(msg="Yangilandi.")
 
 
+@router.post("/users/{user_id}/head", response_model=MsgResponse)
+async def set_dept_head(
+    user_id: int,
+    head: bool = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    from ..models import Department
+    from .records import is_send_target
+    u = await db.get(User, user_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="Xodim topilmadi.")
+    if head:
+        dept = await db.get(Department, u.department_id) if u.department_id else None
+        if not is_send_target(dept):
+            raise HTTPException(status_code=400, detail="Rahbar faqat bosh bo'lim (Фойдаланиш, Капитал, ...) xodimi bo'la oladi.")
+    u.is_dept_head = head
+    await db.commit()
+    return MsgResponse(msg="Rahbar qilindi." if head else "Rahbarlik olib tashlandi.")
+
+
 @router.delete("/users/{user_id}", response_model=MsgResponse)
 async def delete_user(
     user_id: int,

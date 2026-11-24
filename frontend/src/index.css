@@ -629,3 +629,44 @@ button.file-chip { width: 100%; font: inherit; cursor: pointer; }
 .route-chip.from { background: rgba(249,115,22,.12); color: #fdba74; border-color: rgba(249,115,22,.3); }
 .send-to { font-size: 12.5px; color: var(--text-mute); margin-bottom: 8px; text-align: center; }
 .send-to b { color: var(--text); }
+
+/* ── Rahbar: kiruvchi xabarlar va nazorat ───────────────────────── */
+.control-card {
+  display: flex; gap: 16px; align-items: center; padding: 16px;
+  background: linear-gradient(160deg, rgba(34,211,238,.08), rgba(139,92,246,.06)), var(--surface);
+  border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow-s);
+  animation: tileIn .45s cubic-bezier(.2,.9,.3,1.2) both;
+}
+.ring {
+  --p: 0; width: 76px; height: 76px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: conic-gradient(var(--accent-2) calc(var(--p) * 1%), var(--surface3) 0);
+  position: relative; transition: background .6s;
+}
+.ring::before { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: var(--surface); }
+.ring span { position: relative; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+.ring small { font-size: 12px; color: var(--text-mute); font-weight: 700; }
+.control-title { font-size: 16px; font-weight: 800; }
+.control-sub { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-mute); margin: 3px 0 10px; }
+.control-sub b.ok { color: var(--success); } .control-sub b.warn { color: var(--warning); } .control-sub b.bad { color: var(--danger); }
+.remind-btn { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); color: #fcd34d; }
+.remind-btn svg { animation: ring-bell 2.4s ease-in-out infinite; transform-origin: 50% 10%; }
+@keyframes ring-bell { 0%, 70%, 100% { transform: rotate(0); } 75% { transform: rotate(14deg); } 85% { transform: rotate(-12deg); } 92% { transform: rotate(6deg); } }
+.confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 600; }
+
+.chat-ava { position: relative; }
+.ava-status {
+  position: absolute; right: -2px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; border: 2px solid var(--bg);
+}
+.ava-status.ok { background: var(--success); } .ava-status.warn { background: var(--warning); } .ava-status.bad { background: var(--danger); }
+.state-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.state-pill.ok { color: #6ee7b7; background: rgba(16,185,129,.12); }
+.state-pill.warn { color: #fcd34d; background: rgba(245,158,11,.12); }
+.state-pill.bad { color: #fda4af; background: rgba(244,63,94,.12); }
+
+.head-badge {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  font-size: 10.5px; letter-spacing: .04em; color: #fde047; background: rgba(234,179,8,.14);
+}
+.route-chip.reply { background: rgba(139,92,246,.14); color: #c4b5fd; border-color: rgba(139,92,246,.3); }

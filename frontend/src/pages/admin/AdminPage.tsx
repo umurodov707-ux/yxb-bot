@@ -7,6 +7,7 @@ import UsersTab from './UsersTab';
 import SvodkaTab from './SvodkaTab';
 import BroadcastTab from './BroadcastTab';
 import FeedPage from '../FeedPage';
+import UnitsInbox from '../UnitsInbox';
 import AppHeader from '../../components/ui/AppHeader';
 import { getPendingRequests, getDeptSummary } from '../../api';
 
@@ -21,6 +22,27 @@ const NAV = [
 function DeptFeed() {
   const { deptId } = useParams();
   return <FeedPage key={deptId} embedded fixedDeptId={Number(deptId)} />;
+}
+
+function AdminUnits() {
+  const { deptId } = useParams();
+  const id = Number(deptId);
+  return <UnitsInbox key={id} admin deptId={id} base={`/admin/feed/${id}/units`} backTo={`/admin/feed/${id}`} />;
+}
+
+function AdminThread() {
+  const { deptId, unitId } = useParams();
+  const id = Number(deptId);
+  return (
+    <FeedPage key={`${id}-${unitId}`} embedded fixedDeptId={id} threadUnitId={Number(unitId)}
+              backTo={`/admin/feed/${id}/units`} />
+  );
+}
+
+function AdminGeneral() {
+  const { deptId } = useParams();
+  const id = Number(deptId);
+  return <FeedPage key={`g-${id}`} embedded fixedDeptId={id} backTo={`/admin/feed/${id}/units`} />;
 }
 
 export default function AdminPage() {
@@ -57,6 +79,9 @@ export default function AdminPage() {
         <Route path="/feed" element={<AdminDeptHome />} />
         <Route path="/feed/g/:code" element={<DeptGroupPage />} />
         <Route path="/feed/:deptId" element={<DeptFeed />} />
+        <Route path="/feed/:deptId/units" element={<AdminUnits />} />
+        <Route path="/feed/:deptId/units/general" element={<AdminGeneral />} />
+        <Route path="/feed/:deptId/units/:unitId" element={<AdminThread />} />
         <Route path="/all" element={<FeedPage embedded />} />
         <Route path="/requests" element={<RequestsTab />} />
         <Route path="/users" element={<UsersTab />} />

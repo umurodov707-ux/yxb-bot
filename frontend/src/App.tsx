@@ -6,11 +6,37 @@ import FeedPage from './pages/FeedPage';
 import AdminPage from './pages/admin/AdminPage';
 import PendingPage from './pages/PendingPage';
 import { EmployeeHome } from './pages/DeptHome';
+import UnitsInbox from './pages/UnitsInbox';
+import AppHeader from './components/ui/AppHeader';
 import { useParams } from 'react-router-dom';
 
 function UserDeptFeed() {
   const { deptId } = useParams();
   return <FeedPage key={deptId} fixedDeptId={Number(deptId)} backTo="/" />;
+}
+
+function HeadInbox() {
+  const { user } = useAuth();
+  if (!user?.is_dept_head || !user.department_id) return <Navigate to="/" replace />;
+  return (
+    <>
+      <AppHeader />
+      <UnitsInbox deptId={user.department_id} base="/inbox" backTo="/" />
+    </>
+  );
+}
+
+function HeadThread() {
+  const { user } = useAuth();
+  const { unitId } = useParams();
+  if (!user?.is_dept_head || !user.department_id) return <Navigate to="/" replace />;
+  return <FeedPage key={unitId} fixedDeptId={user.department_id} threadUnitId={Number(unitId)} backTo="/inbox" />;
+}
+
+function HeadGeneral() {
+  const { user } = useAuth();
+  if (!user?.department_id) return <Navigate to="/" replace />;
+  return <FeedPage fixedDeptId={user.department_id} backTo="/inbox" />;
 }
 
 function AppRoutes() {
@@ -43,6 +69,9 @@ function AppRoutes() {
         <>
           <Route path="/" element={<EmployeeHome />} />
           <Route path="/d/:deptId" element={<UserDeptFeed />} />
+          <Route path="/inbox" element={<HeadInbox />} />
+          <Route path="/inbox/general" element={<HeadGeneral />} />
+          <Route path="/inbox/:unitId" element={<HeadThread />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       )}

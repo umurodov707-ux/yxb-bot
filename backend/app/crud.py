@@ -180,6 +180,7 @@ async def get_records(
     offset: int = 0,
     involving: bool = False,
     viewer_unit: Optional[int] = None,
+    source_id: Optional[int] = None,
 ) -> List[Record]:
     """
     involving=True  — bo'limga yuborilgan YOKI shu bo'lim yuborgan yozuvlar.
@@ -199,6 +200,8 @@ async def get_records(
         q = q.where(Record.department_id == department_id)
     if viewer_unit:
         q = q.where(or_(Record.source_department_id == viewer_unit, Record.source_department_id.is_(None)))
+    if source_id:
+        q = q.where(Record.source_department_id == source_id)
     if record_type:
         q = q.where(Record.record_type == record_type)
     if date_from:

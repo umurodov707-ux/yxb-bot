@@ -117,6 +117,7 @@ async def me(
         department_id=user.department_id,
         department_name=dept_name,
         is_blocked=bool(user.is_blocked),
+        is_dept_head=bool(user.is_dept_head),
         created_at=user.created_at or datetime.utcnow(),
     )
 

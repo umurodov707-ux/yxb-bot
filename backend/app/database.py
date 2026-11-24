@@ -40,6 +40,10 @@ async def init_db():
 def _add_missing_columns(sync_conn):
     """create_all mavjud jadvalga yangi ustun qo'shmaydi — shu yerda qo'shamiz."""
     from sqlalchemy import inspect, text
+    user_cols = {c["name"] for c in inspect(sync_conn).get_columns("users")}
+    if "is_dept_head" not in user_cols:
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN is_dept_head BOOLEAN NOT NULL DEFAULT FALSE"))
+
     cols = {c["name"] for c in inspect(sync_conn).get_columns("records")}
     if "source_department_id" not in cols:
         sync_conn.execute(text(

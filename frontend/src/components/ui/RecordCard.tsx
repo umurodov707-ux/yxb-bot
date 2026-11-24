@@ -97,7 +97,9 @@ export default function RecordCard({ record, mine, showDept = true, contextDeptI
       <div className={`bubble ${record.record_type === 'urgent' ? 'urgent' : ''} ${record.record_type === 'broadcast' ? 'broadcast' : ''}`}>
         <div className="bubble-head">
           <span className="bubble-author">{mine ? 'Siz' : author}</span>
-          {contextDeptId && record.department_id !== contextDeptId ? (
+          {record.is_reply && record.source_department_name ? (
+            <span className="route-chip reply">↩ {record.source_department_name}</span>
+          ) : contextDeptId && record.department_id !== contextDeptId ? (
             <span className="route-chip">→ {record.department_name}</span>
           ) : contextDeptId && record.source_department_name && record.source_department_id !== contextDeptId ? (
             <span className="route-chip from">{record.source_department_name} →</span>

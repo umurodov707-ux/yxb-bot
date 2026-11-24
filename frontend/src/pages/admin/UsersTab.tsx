@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { getUsers, blockUser, transferUser, getDeptFlat } from '../../api';
+import { getUsers, blockUser, transferUser, getDeptFlat, setDeptHead } from '../../api';
 import type { User, Department } from '../../types';
 
 export default function UsersTab() {
@@ -33,6 +33,16 @@ export default function UsersTab() {
     setUsers(us => us.map(x => x.id === u.id ? { ...x, is_blocked: !x.is_blocked } : x));
   };
 
+  const isHeadable = (u: User) => {
+    const d = depts.find(x => x.id === u.department_id);
+    return !!d && d.parent_id === null && !['PC', 'PMS'].includes(d.code) && !d.read_only_broadcast && u.role !== 'admin';
+  };
+
+  const handleHead = async (u: User) => {
+    await setDeptHead(u.id, !u.is_dept_head);
+    setUsers(us => us.map(x => x.id === u.id ? { ...x, is_dept_head: !x.is_dept_head } : x));
+  };
+
   const handleTransfer = async (userId: number, deptId: number) => {
     await transferUser(userId, deptId);
     setTransfering(null);
@@ -63,6 +73,9 @@ export default function UsersTab() {
               <span style={{ fontWeight: 700 }}>{u.full_name}</span>
               {u.role === 'admin' && (
                 <span className="badge badge-orange" style={{ marginLeft: 8 }}>Admin</span>
+              )}
+              {u.is_dept_head && (
+                <span className="badge badge-purple" style={{ marginLeft: 8 }}>👑 Rahbar</span>
               )}
               {u.is_blocked && (
                 <span className="badge badge-red" style={{ marginLeft: 8 }}>Bloklangan</span>
@@ -99,7 +112,12 @@ export default function UsersTab() {
               <button className="btn btn-ghost btn-sm" onClick={() => setTransfering(null)}>✕</button>
             </div>
           ) : (
-            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isHeadable(u) && (
+                <button className={`btn btn-sm ${u.is_dept_head ? 'btn-ghost' : 'btn-primary'}`} onClick={() => handleHead(u)}>
+                  {u.is_dept_head ? 'Rahbarlikni olish' : '👑 Rahbar qilish'}
+                </button>
+              )}
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => setTransfering({ userId: u.id, deptId: '' })}

@@ -37,6 +37,7 @@ class UserOut(BaseModel):
     department_id: Optional[int]
     department_name: Optional[str] = None
     is_blocked: bool
+    is_dept_head: bool = False
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
@@ -120,6 +121,7 @@ class RecordOut(BaseModel):
     department_name: Optional[str] = None
     source_department_id: Optional[int] = None
     source_department_name: Optional[str] = None
+    is_reply: bool = False
     author_id: Optional[int]
     author_name: Optional[str] = None
     broadcast_to: Optional[List[int]]

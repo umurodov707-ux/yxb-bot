@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import (
-    APIRouter, Body, Depends, HTTPException, Query,
+    APIRouter, Body, Depends, HTTPException, Query, Request,
     UploadFile, File, Form, status,
 )
 from sqlalchemy import and_, case, func, or_, select, update
@@ -53,12 +53,29 @@ def _record_to_out(rec) -> RecordOut:
     out = RecordOut.model_validate(rec)
     out.department_name = dept_name
     out.source_department_name = src_name
+    try:
+        out.is_reply = bool(rec.source_department_id and rec.author
+                            and rec.author.department_id != rec.source_department_id)
+    except Exception:
+        pass
     out.author_name = author_name
     out.files = [FileOut.model_validate(f) for f in (rec.files or [])]
     return out
 
 
 GROUP_CODES = {"PC", "PMS"}
+
+
+def manages(user: User, dept_id: Optional[int]) -> bool:
+    """Admin yoki shu bosh bo'limning rahbari."""
+    return user.role == UserRole.admin or bool(
+        user.is_dept_head and dept_id and user.department_id == dept_id
+    )
+
+
+def is_unit(d: Department, parents: dict) -> bool:
+    """Spravka yuboradigan bo'linmalar: ПЧ-*, ПМС/ОПМС-* va РСП."""
+    return parents.get(d.parent_id or 0) in GROUP_CODES or d.code == "RSP"
 
 
 def is_send_target(dept: Department | None) -> bool:
@@ -76,11 +93,15 @@ async def list_records(
     keyword: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
+    source_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     involving, viewer_unit = True, None
-    if user.role != UserRole.admin:
+    if source_id and manages(user, department_id):
+        involving = False                          # rahbar/admin: aniq bo'linma bilan yozishma
+    elif user.role != UserRole.admin:
+        source_id = None
         own = user.department_id
         dept = await db.get(Department, department_id) if department_id else None
         if dept and dept.read_only_broadcast:
@@ -92,7 +113,7 @@ async def list_records(
 
     recs = await get_records(
         db, department_id, record_type, date_from, date_to, keyword, limit, offset,
-        involving=involving, viewer_unit=viewer_unit,
+        involving=involving, viewer_unit=viewer_unit, source_id=source_id,
     )
     return [_record_to_out(r) for r in recs]
 
@@ -105,12 +126,21 @@ async def create_new_record(
     record_type: RecordType = Form(RecordType.message),
     department_id: Optional[int] = Form(None),
     record_date: Optional[datetime] = Form(None),
+    thread_unit_id: Optional[int] = Form(None),
     files: List[UploadFile] = File(default=[]),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     source_id = None
-    if user.role != UserRole.admin:
+    reply_unit = None
+    if department_id and manages(user, department_id):
+        # Rahbar/admin: bo'linmaga javob (thread) yoki bo'limning umumiy e'loni (manbasiz)
+        if thread_unit_id and thread_unit_id != department_id:
+            reply_unit = await db.get(Department, thread_unit_id)
+            if reply_unit:
+                source_id = reply_unit.id
+    elif user.role != UserRole.admin:
         source_id = user.department_id
         target = await db.get(Department, department_id) if department_id else None
         if not (target and target.id != user.department_id and is_send_target(target)):
@@ -146,7 +176,113 @@ async def create_new_record(
 
     # reload with files
     rec = await get_record(db, rec.id)
+    if reply_unit:
+        dept_name = rec.department.name if rec.department else ""
+        text = f"📩 <b>{dept_name}</b> dan javob:\n\n<b>{rec.title}</b>"
+        if rec.body and rec.body != rec.title:
+            text += f"\n{rec.body}"
+        await _notify_unit(request, db, reply_unit.id, text)
     return _record_to_out(rec)
+
+async def _notify_unit(request, db: AsyncSession, unit_id: int, text: str) -> int:
+    """Bo'linmaning tasdiqlangan xodimlariga bot orqali xabar yuboradi."""
+    import logging
+    from ..bot.keyboards import main_menu_kb
+    from ..models import RegistrationStatus
+    bot = getattr(request.app.state, "bot", None) if request else None
+    if not bot:
+        return 0
+    staff = (await db.execute(
+        select(User.telegram_id).where(
+            User.department_id == unit_id,
+            User.reg_status == RegistrationStatus.approved,
+            User.is_blocked == False,
+        )
+    )).scalars().all()
+    sent = 0
+    for tg_id in staff:
+        try:
+            await bot.send_message(tg_id, text, reply_markup=main_menu_kb(settings.WEBAPP_URL))
+            sent += 1
+        except Exception:
+            logging.getLogger(__name__).warning("Xabar yuborilmadi: %s", tg_id)
+    return sent
+
+
+# ── GET /records/units — rahbar/admin: bo'linmalar bo'yicha kiruvchi va bugungi nazorat ──
+@router.get("/units")
+async def units_inbox(
+    department_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not manages(user, department_id):
+        raise HTTPException(status_code=403, detail="Ruxsat yo'q.")
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    depts = (await db.execute(select(Department).order_by(Department.sort_order, Department.id))).scalars().all()
+    parents = {d.id: d.code for d in depts}
+    units = [d for d in depts if is_unit(d, parents) and d.id != department_id]
+
+    rows = (await db.execute(
+        select(Record.id, Record.source_department_id, Record.created_at, Record.status,
+               Record.author_id, User.department_id.label("author_dept"))
+        .join(User, User.id == Record.author_id, isouter=True)
+        .where(Record.is_deleted == False, Record.department_id == department_id,
+               Record.source_department_id.is_not(None))
+    )).all()
+
+    by_unit: dict = {}
+    for r in rows:
+        by_unit.setdefault(r.source_department_id, []).append(r)
+
+    last_ids = [max(v, key=lambda r: r.id).id for v in by_unit.values()]
+    last_map = {}
+    if last_ids:
+        res = await db.execute(select(Record).options(selectinload(Record.author), selectinload(Record.files))
+                               .where(Record.id.in_(last_ids)))
+        last_map = {r.id: r for r in res.scalars().all()}
+
+    out = []
+    for u in units:
+        recs = by_unit.get(u.id, [])
+        incoming = [r for r in recs if r.author_dept == u.id]
+        last = last_map.get(max(recs, key=lambda r: r.id).id) if recs else None
+        out.append({
+            "department_id": u.id,
+            "name": u.name,
+            "code": u.code,
+            "parent_id": u.parent_id,
+            "total": len(recs),
+            "today_in": sum(1 for r in incoming if r.created_at and r.created_at.replace(tzinfo=None) >= today),
+            "unread": sum(1 for r in incoming if r.status == RecordStatus.sent),
+            "last_title": last.title if last else None,
+            "last_author": last.author.full_name if last and last.author else None,
+            "last_at": last.created_at.isoformat() if last and last.created_at else None,
+            "last_has_files": bool(last and last.files),
+            "last_is_reply": bool(last and last.author and last.author.department_id != u.id),
+        })
+    return out
+
+
+# ── POST /records/remind — bugun yubormagan bo'linmalarga eslatma ─────────────
+@router.post("/remind", response_model=MsgResponse)
+async def remind_units(
+    request: Request,
+    department_id: int = Body(...),
+    unit_ids: List[int] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not manages(user, department_id):
+        raise HTTPException(status_code=403, detail="Ruxsat yo'q.")
+    dept = await db.get(Department, department_id)
+    total = 0
+    for uid in unit_ids:
+        total += await _notify_unit(
+            request, db, uid,
+            f"⏰ <b>Eslatma</b>\n\n<b>{dept.name}</b> ga bugungi spravkani yuboring.",
+        )
+    return MsgResponse(msg=f"{total} ta xodimga eslatma yuborildi.")
 
 
 # ── GET /records/summary (admin) — bo'limlar ro'yxati, chatlar kabi ───────────
@@ -187,7 +323,10 @@ async def departments_summary(
         stats[d.id] = (
             len(mine),
             sum(1 for r in mine if is_today(r.created_at)),
-            sum(1 for r in mine if r.status == RecordStatus.sent and r.author_id not in admin_ids) if is_admin else 0,
+            sum(1 for r in mine if r.status == RecordStatus.sent and r.author_id not in admin_ids) if is_admin
+            else sum(1 for r in mine if r.status == RecordStatus.sent and r.source_department_id not in (None, own)
+                     and r.author_id != user.id and r.author_id not in admin_ids)
+            if (user.is_dept_head and d.id == own) else 0,
             last.id if last else None,
         )
 
@@ -226,16 +365,22 @@ async def departments_summary(
 # ── POST /records/seen (admin) — bo'limdagi xabarlarni ko'rildi deb belgilash ──
 @router.post("/seen", response_model=MsgResponse)
 async def mark_department_seen(
-    department_id: int = Body(..., embed=True),
+    department_id: int = Body(...),
+    source_id: Optional[int] = Body(None),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
+    if not manages(user, department_id):
+        raise HTTPException(status_code=403, detail="Ruxsat yo'q.")
+    if source_id:
+        cond = and_(Record.department_id == department_id, Record.source_department_id == source_id)
+    elif user.role == UserRole.admin:
+        cond = or_(Record.department_id == department_id, Record.source_department_id == department_id)
+    else:
+        cond = Record.department_id == department_id
     await db.execute(
         update(Record)
-        .where(
-            or_(Record.department_id == department_id, Record.source_department_id == department_id),
-            Record.status == RecordStatus.sent,
-        )
+        .where(cond, Record.status == RecordStatus.sent, Record.author_id != user.id)
         .values(status=RecordStatus.seen_by_admin)
     )
     await db.commit()

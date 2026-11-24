@@ -25,6 +25,7 @@ export interface User {
   department_id: number | null;
   department_name: string | null;
   is_blocked: boolean;
+  is_dept_head?: boolean;
   created_at: string;
 }
 
@@ -49,6 +50,7 @@ export interface FeedRecord {
   department_name: string | null;
   source_department_id?: number | null;
   source_department_name?: string | null;
+  is_reply?: boolean;
   author_id: number | null;
   author_name: string | null;
   broadcast_to: number[] | null;
@@ -102,4 +104,19 @@ export interface DeptSummary {
   last_type: RecordType | null;
   last_has_files: boolean;
   last_at: string | null;
+}
+
+export interface UnitRow {
+  department_id: number;
+  name: string;
+  code: string;
+  parent_id: number | null;
+  total: number;
+  today_in: number;
+  unread: number;
+  last_title: string | null;
+  last_author: string | null;
+  last_at: string | null;
+  last_has_files: boolean;
+  last_is_reply: boolean;
 }

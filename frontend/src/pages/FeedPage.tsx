@@ -3,7 +3,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { uz } from 'date-fns/locale';
 import {
   Search, SlidersHorizontal, Send, Paperclip, X, Inbox, MessageSquareText,
-  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2, ArrowLeft, Lock,
+  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2, ArrowLeft, Lock, LayoutList,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getRecords, deleteRecord, createRecord, getDeptFlat, markDeptSeen } from '../api';
@@ -23,7 +23,9 @@ function dayLabel(d: Date) {
   return format(d, 'd MMMM yyyy', { locale: uz });
 }
 
-export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/admin/feed' }: { embedded?: boolean; fixedDeptId?: number; backTo?: string }) {
+export default function FeedPage({
+  embedded = false, fixedDeptId, backTo = '/admin/feed', threadUnitId,
+}: { embedded?: boolean; fixedDeptId?: number; backTo?: string; threadUnitId?: number }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const navigate = useNavigate();
@@ -67,6 +69,7 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         department_id: deptId || undefined,
+        source_id: threadUnitId,
         limit: 200,
       });
       const list = [...res.data].sort(
@@ -80,15 +83,16 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
       }
       lastIdRef.current = maxId;
       setRecords(list);
-      if (isAdmin && fixedDeptId && list.some(r => r.status === 'sent' && r.author_id !== user?.id)) {
-        markDeptSeen(fixedDeptId).catch(() => {});
+      const manager = isAdmin || (user?.is_dept_head && user.department_id === fixedDeptId);
+      if (manager && fixedDeptId && list.some(r => r.status === 'sent' && r.author_id !== user?.id)) {
+        markDeptSeen(fixedDeptId, threadUnitId).catch(() => {});
       }
       if (!silent) scrollBottom(false);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [keyword, typeFilter, dateFrom, dateTo, deptId, isAdmin, fixedDeptId, user?.id]);
+  }, [keyword, typeFilter, dateFrom, dateTo, deptId, isAdmin, fixedDeptId, threadUnitId, user?.id, user?.is_dept_head, user?.department_id]);
 
   useEffect(() => {
     const t = setTimeout(() => load(), keyword ? 350 : 0);
@@ -151,6 +155,7 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
       const type = sendType === 'message' && files.length > 0 ? (onlyImages ? 'spravka' : 'document') : sendType;
       fd.append('record_type', type);
       fd.append('department_id', String(targetDept));
+      if (threadUnitId) fd.append('thread_unit_id', String(threadUnitId));
       files.forEach(f => fd.append('files', f));
       await createRecord(fd);
       setText(''); setFiles([]); setSendType('message');
@@ -175,6 +180,10 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
   const activeFilters = [dateFrom, dateTo, fixedDeptId ? '' : deptId].filter(Boolean).length;
   const fixedDept = depts.find(d => d.id === fixedDeptId);
   const deptName = fixedDept?.name;
+  const unitName = depts.find(d => d.id === threadUnitId)?.name;
+  const isTargetDept = !!fixedDept && fixedDept.parent_id === null && !['PC', 'PMS'].includes(fixedDept.code) && !fixedDept.read_only_broadcast;
+  const canOpenUnits = !threadUnitId && isTargetDept && (isAdmin || (user?.is_dept_head && user.department_id === fixedDeptId));
+  const unitsPath = isAdmin ? `/admin/feed/${fixedDeptId}/units` : '/inbox';
   const readOnlyForMe = !isAdmin && !!fixedDept?.read_only_broadcast;
 
   return (
@@ -186,10 +195,19 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
       {fixedDeptId && (
         <div className={`chat-head${isAdmin ? '' : ' no-nav'}`}>
           <button className="icon-btn" onClick={() => navigate(backTo)} aria-label="Orqaga"><ArrowLeft size={19} /></button>
-          <div style={{ minWidth: 0 }}>
-            <div className="chat-head-name">{deptName ?? 'Boʻlim'}</div>
-            <div className="text-xs text-mute">{records.length} ta yozuv · {readOnlyForMe ? 'faqat oʻqish uchun' : 'faqat shu boʻlim'}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="chat-head-name">
+              {threadUnitId ? <>{unitName ?? '…'} <span className="text-mute">↔</span> {deptName ?? ''}</> : (deptName ?? 'Boʻlim')}
+            </div>
+            <div className="text-xs text-mute">
+              {records.length} ta yozuv · {threadUnitId ? 'javobingiz faqat shu boʻlinmaga boradi' : readOnlyForMe ? 'faqat oʻqish uchun' : 'faqat shu boʻlim'}
+            </div>
           </div>
+          {canOpenUnits && (
+            <button className="icon-btn units-btn" onClick={() => navigate(unitsPath)} aria-label="Boʻlinmalar boʻyicha">
+              <LayoutList size={18} />
+            </button>
+          )}
         </div>
       )}
 

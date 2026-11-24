@@ -90,6 +90,8 @@ class User(Base):
     department = relationship("Department", back_populates="users")
 
     is_blocked = Column(Boolean, default=False)
+    # Bosh bo'lim rahbari: o'z bo'limiga kelgan barcha bo'linma xabarlarini boshqaradi
+    is_dept_head = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
 
