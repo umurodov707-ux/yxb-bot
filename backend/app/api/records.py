@@ -27,12 +27,24 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def _record_to_out(rec) -> RecordOut:
+    dept_name = None
+    try:
+        if rec.department:
+            dept_name = rec.department.name
+    except Exception:
+        pass
+
+    author_name = None
+    try:
+        if rec.author:
+            author_name = rec.author.full_name
+    except Exception:
+        pass
+
     out = RecordOut.model_validate(rec)
-    if rec.department:
-        out.department_name = rec.department.name
-    if rec.author:
-        out.author_name = rec.author.full_name
-    out.files = [FileOut.model_validate(f) for f in rec.files]
+    out.department_name = dept_name
+    out.author_name = author_name
+    out.files = [FileOut.model_validate(f) for f in (rec.files or [])]
     return out
 
 
