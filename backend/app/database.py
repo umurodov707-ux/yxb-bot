@@ -33,7 +33,25 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)
     await seed_departments()
+
+
+def _add_missing_columns(sync_conn):
+    """create_all mavjud jadvalga yangi ustun qo'shmaydi — shu yerda qo'shamiz."""
+    from sqlalchemy import inspect, text
+    cols = {c["name"] for c in inspect(sync_conn).get_columns("records")}
+    if "source_department_id" not in cols:
+        sync_conn.execute(text(
+            "ALTER TABLE records ADD COLUMN source_department_id INTEGER REFERENCES departments(id)"
+        ))
+        # Eski yozuvlar: admin bo'lmagan muallifning bo'linmasi — manba
+        sync_conn.execute(text(
+            "UPDATE records SET source_department_id = ("
+            " SELECT users.department_id FROM users"
+            " WHERE users.id = records.author_id AND CAST(users.role AS TEXT) <> 'admin')"
+            " WHERE source_department_id IS NULL AND author_id IS NOT NULL"
+        ))
 
 
 async def get_db():

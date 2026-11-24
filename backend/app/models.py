@@ -65,7 +65,7 @@ class Department(Base):
     children = relationship("Department", back_populates="parent",
                             order_by="Department.sort_order")
     users = relationship("User", back_populates="department")
-    records = relationship("Record", back_populates="department")
+    records = relationship("Record", back_populates="department", foreign_keys="Record.department_id")
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +109,12 @@ class Record(Base):
     record_type = Column(SAEnum(RecordType), nullable=False, default=RecordType.message)
     status = Column(SAEnum(RecordStatus), default=RecordStatus.sent, nullable=False)
 
-    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
-    department = relationship("Department", back_populates="records")
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)  # kimga
+    department = relationship("Department", back_populates="records", foreign_keys=[department_id])
+
+    # kimdan: yuborgan bo'linma (ПЧ-7 va h.k.); admin yozuvlarida None
+    source_department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
+    source_department = relationship("Department", foreign_keys=[source_department_id])
 
     author_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # None → bot/admin
     author = relationship("User", back_populates="records")

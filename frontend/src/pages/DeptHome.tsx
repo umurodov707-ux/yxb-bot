@@ -211,6 +211,9 @@ export function EmployeeHome() {
   const { rows, loading } = useSummary();
   const own = rows.find(r => r.department_id === user?.department_id);
   const shared = rows.filter(r => r.read_only && r.department_id !== user?.department_id);
+  const targets = rows
+    .filter(r => r.parent_id === null && !r.read_only && !GROUP_CODES.includes(r.code) && r.department_id !== user?.department_id)
+    .sort((a, b) => a.sort_order - b.sort_order);
 
   return (
     <>
@@ -231,10 +234,26 @@ export function EmployeeHome() {
             onClick={() => nav(`/d/${own.department_id}`)}
           />
         )}
-        {own && (
+        {own && targets.length === 0 && (
           <button className="btn btn-primary w-full mt-3" onClick={() => nav(`/d/${own.department_id}`)}>
             <PenLine size={17} /> Spravka yoki xabar yuborish
           </button>
+        )}
+
+        {targets.length > 0 && (
+          <>
+            <div className="section-title">Qayerga yuborasiz?</div>
+            <div className="tile-grid">
+              {targets.map((r, i) => (
+                <DeptTile
+                  key={r.department_id} index={r.sort_order} name={r.name} code={r.code}
+                  today={r.today} unread={0} delay={i * 35}
+                  sub={r.total > 0 ? `${r.total} ta yozishma` : undefined}
+                  onClick={() => nav(`/d/${r.department_id}`)}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {shared.length > 0 && (

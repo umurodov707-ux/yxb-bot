@@ -64,10 +64,11 @@ interface Props {
   record: FeedRecord;
   mine?: boolean;
   showDept?: boolean;
+  contextDeptId?: number;
   onDelete?: (id: number) => void;
 }
 
-export default function RecordCard({ record, mine, showDept = true, onDelete }: Props) {
+export default function RecordCard({ record, mine, showDept = true, contextDeptId, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const meta = TYPE_META[record.record_type] ?? TYPE_META.message;
@@ -96,7 +97,13 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
       <div className={`bubble ${record.record_type === 'urgent' ? 'urgent' : ''} ${record.record_type === 'broadcast' ? 'broadcast' : ''}`}>
         <div className="bubble-head">
           <span className="bubble-author">{mine ? 'Siz' : author}</span>
-          {showDept && record.department_name && <span className="bubble-dept">{record.department_name}</span>}
+          {contextDeptId && record.department_id !== contextDeptId ? (
+            <span className="route-chip">→ {record.department_name}</span>
+          ) : contextDeptId && record.source_department_name && record.source_department_id !== contextDeptId ? (
+            <span className="route-chip from">{record.source_department_name} →</span>
+          ) : showDept && record.department_name ? (
+            <span className="bubble-dept">{record.department_name}</span>
+          ) : null}
           <span className={`badge ${meta.cls}`} style={{ marginLeft: 'auto' }}>{meta.icon} {meta.label}</span>
         </div>
 

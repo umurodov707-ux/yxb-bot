@@ -43,11 +43,27 @@ def _record_to_out(rec) -> RecordOut:
     except Exception:
         pass
 
+    src_name = None
+    try:
+        if rec.source_department:
+            src_name = rec.source_department.name
+    except Exception:
+        pass
+
     out = RecordOut.model_validate(rec)
     out.department_name = dept_name
+    out.source_department_name = src_name
     out.author_name = author_name
     out.files = [FileOut.model_validate(f) for f in (rec.files or [])]
     return out
+
+
+GROUP_CODES = {"PC", "PMS"}
+
+
+def is_send_target(dept: Department | None) -> bool:
+    """Bo'linma xodimi yubora oladigan bosh bo'lim (Фойдаланиш, Капитал, ... Бошкалар)."""
+    return bool(dept and dept.parent_id is None and dept.code not in GROUP_CODES and not dept.read_only_broadcast)
 
 
 # ── GET /records ──────────────────────────────────────────────────────────────
@@ -63,14 +79,20 @@ async def list_records(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Oddiy xodim o'z bo'limini va umumiy (faqat o'qish) bo'limlarni ko'radi
+    involving, viewer_unit = True, None
     if user.role != UserRole.admin:
+        own = user.department_id
         dept = await db.get(Department, department_id) if department_id else None
-        if not (dept and dept.read_only_broadcast):
-            department_id = user.department_id
+        if dept and dept.read_only_broadcast:
+            involving = False                      # e'lonlar — hammaga
+        elif dept and dept.id != own and is_send_target(dept):
+            involving, viewer_unit = False, own    # faqat o'z bo'linmasi yuborganlari + bo'lim e'lonlari
+        else:
+            department_id = own                    # o'z bo'linmasi: kelgan va yuborgan hammasi
 
     recs = await get_records(
-        db, department_id, record_type, date_from, date_to, keyword, limit, offset
+        db, department_id, record_type, date_from, date_to, keyword, limit, offset,
+        involving=involving, viewer_unit=viewer_unit,
     )
     return [_record_to_out(r) for r in recs]
 
@@ -87,9 +109,12 @@ async def create_new_record(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Oddiy xodim faqat o'z bo'limiga yoza oladi
+    source_id = None
     if user.role != UserRole.admin:
-        department_id = user.department_id
+        source_id = user.department_id
+        target = await db.get(Department, department_id) if department_id else None
+        if not (target and target.id != user.department_id and is_send_target(target)):
+            department_id = user.department_id
 
     if not department_id:
         raise HTTPException(status_code=400, detail="Bo'lim ko'rsatilmagan.")
@@ -98,7 +123,7 @@ async def create_new_record(
         title=title, body=body, record_type=record_type,
         department_id=department_id, record_date=record_date,
     )
-    rec = await create_record(db, data, author_id=user.id)
+    rec = await create_record(db, data, author_id=user.id, source_department_id=source_id)
 
     # save files
     max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
@@ -131,42 +156,54 @@ async def departments_summary(
     user: User = Depends(get_current_user),
 ):
     is_admin = user.role == UserRole.admin
+    own = user.department_id
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    admin_ids = select(User.id).where(User.role == UserRole.admin)
+    admin_ids = set((await db.execute(select(User.id).where(User.role == UserRole.admin))).scalars().all())
 
-    agg = await db.execute(
-        select(
-            Record.department_id,
-            func.count(Record.id),
-            func.sum(case((Record.created_at >= today, 1), else_=0)),
-            func.sum(case(
-                (and_(Record.status == RecordStatus.sent,
-                      or_(Record.author_id.is_(None), Record.author_id.not_in(admin_ids))), 1),
-                else_=0,
-            )),
-            func.max(Record.id),
-        )
+    rows = (await db.execute(
+        select(Record.id, Record.department_id, Record.source_department_id,
+               Record.created_at, Record.status, Record.author_id)
         .where(Record.is_deleted == False)
-        .group_by(Record.department_id)
-    )
-    stats = {row[0]: row[1:] for row in agg.all()}
+    )).all()
 
-    last_ids = [s[3] for s in stats.values() if s[3]]
+    depts = (await db.execute(select(Department).order_by(Department.sort_order, Department.id))).scalars().all()
+    if not is_admin:
+        depts = [d for d in depts if d.id == own or d.read_only_broadcast or is_send_target(d)]
+
+    def visible(d: Department, r) -> bool:
+        if is_admin or d.id == own:
+            return r.department_id == d.id or r.source_department_id == d.id
+        if d.read_only_broadcast:
+            return r.department_id == d.id
+        return r.department_id == d.id and r.source_department_id in (own, None)
+
+    def is_today(ts) -> bool:
+        return ts is not None and ts.replace(tzinfo=None) >= today
+
+    stats = {}
+    for d in depts:
+        mine = [r for r in rows if visible(d, r)]
+        last = max(mine, key=lambda r: r.id, default=None)
+        stats[d.id] = (
+            len(mine),
+            sum(1 for r in mine if is_today(r.created_at)),
+            sum(1 for r in mine if r.status == RecordStatus.sent and r.author_id not in admin_ids) if is_admin else 0,
+            last.id if last else None,
+        )
+
+    last_ids = {s_[3] for s_ in stats.values() if s_[3]}
     last_map = {}
     if last_ids:
         res = await db.execute(
             select(Record).options(selectinload(Record.author), selectinload(Record.files))
             .where(Record.id.in_(last_ids))
         )
-        last_map = {r.department_id: r for r in res.scalars().all()}
+        last_map = {r.id: r for r in res.scalars().all()}
 
-    depts = (await db.execute(select(Department).order_by(Department.sort_order, Department.id))).scalars().all()
-    if not is_admin:
-        depts = [d for d in depts if d.id == user.department_id or d.read_only_broadcast]
     out = []
     for d in depts:
-        total, today_cnt, unread, _ = stats.get(d.id, (0, 0, 0, None))
-        last = last_map.get(d.id)
+        total, today_cnt, unread, last_id = stats[d.id]
+        last = last_map.get(last_id)
         out.append({
             "department_id": d.id,
             "name": d.name,
@@ -174,9 +211,9 @@ async def departments_summary(
             "parent_id": d.parent_id,
             "sort_order": d.sort_order,
             "read_only": bool(d.read_only_broadcast),
-            "total": total or 0,
-            "today": int(today_cnt or 0),
-            "unread": int(unread or 0) if is_admin else 0,
+            "total": total,
+            "today": today_cnt,
+            "unread": unread,
             "last_title": last.title if last else None,
             "last_author": last.author.full_name if last and last.author else None,
             "last_type": last.record_type.value if last else None,
@@ -195,7 +232,10 @@ async def mark_department_seen(
 ):
     await db.execute(
         update(Record)
-        .where(Record.department_id == department_id, Record.status == RecordStatus.sent)
+        .where(
+            or_(Record.department_id == department_id, Record.source_department_id == department_id),
+            Record.status == RecordStatus.sent,
+        )
         .values(status=RecordStatus.seen_by_admin)
     )
     await db.commit()

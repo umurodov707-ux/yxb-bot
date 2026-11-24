@@ -118,6 +118,8 @@ class RecordOut(BaseModel):
     status: RecordStatus
     department_id: int
     department_name: Optional[str] = None
+    source_department_id: Optional[int] = None
+    source_department_name: Optional[str] = None
     author_id: Optional[int]
     author_name: Optional[str] = None
     broadcast_to: Optional[List[int]]

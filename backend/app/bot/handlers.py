@@ -148,7 +148,7 @@ import asyncio, logging, os, uuid
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from ..database import AsyncSessionLocal
-from ..models import User, Record, AttachedFile, RecordType, RecordStatus, RegistrationStatus
+from ..models import User, Record, AttachedFile, RecordType, RecordStatus, RegistrationStatus, UserRole
 from ..storage import save_blob
 
 log = logging.getLogger(__name__)
@@ -288,6 +288,7 @@ async def _save_message(msg: Message) -> int | None:
             record_type=rec_type,
             status=RecordStatus.sent,
             department_id=user.department_id,
+            source_department_id=None if user.role == UserRole.admin else user.department_id,
             author_id=user.id,
         )
         db.add(record)

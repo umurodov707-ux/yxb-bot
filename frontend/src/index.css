@@ -620,3 +620,12 @@ button.file-chip { width: 100%; font: inherit; cursor: pointer; }
 .chat-head.no-nav { top: 64px; }
 .chat-head .tile-ico.sm { box-shadow: none; }
 .ro-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 4px; font-size: 13px; font-weight: 600; color: #fde047; }
+
+/* ── Yo'nalish belgilari (ПЧ-7 → Капитал) ───────────────────────── */
+.route-chip {
+  font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: rgba(34,211,238,.12); color: var(--accent-2); border: 1px solid rgba(34,211,238,.25);
+}
+.route-chip.from { background: rgba(249,115,22,.12); color: #fdba74; border-color: rgba(249,115,22,.3); }
+.send-to { font-size: 12.5px; color: var(--text-mute); margin-bottom: 8px; text-align: center; }
+.send-to b { color: var(--text); }

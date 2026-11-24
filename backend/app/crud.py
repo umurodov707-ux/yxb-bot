@@ -151,12 +151,14 @@ async def create_record(
     db: AsyncSession,
     data: RecordCreate,
     author_id: Optional[int] = None,
+    source_department_id: Optional[int] = None,
 ) -> Record:
     rec = Record(
         title=data.title,
         body=data.body,
         record_type=data.record_type,
         department_id=data.department_id,
+        source_department_id=source_department_id,
         author_id=author_id,
         broadcast_to=data.broadcast_to,
         record_date=data.record_date or datetime.utcnow(),
@@ -176,14 +178,27 @@ async def get_records(
     keyword: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    involving: bool = False,
+    viewer_unit: Optional[int] = None,
 ) -> List[Record]:
+    """
+    involving=True  — bo'limga yuborilgan YOKI shu bo'lim yuborgan yozuvlar.
+    viewer_unit     — faqat shu bo'linma yuborganlari va bo'limning umumiy (manbasiz) yozuvlari.
+    """
     q = (
         select(Record)
-        .options(selectinload(Record.files), selectinload(Record.author))
+        .options(
+            selectinload(Record.files), selectinload(Record.author),
+            selectinload(Record.department), selectinload(Record.source_department),
+        )
         .where(Record.is_deleted == False)
     )
-    if department_id:
+    if department_id and involving:
+        q = q.where(or_(Record.department_id == department_id, Record.source_department_id == department_id))
+    elif department_id:
         q = q.where(Record.department_id == department_id)
+    if viewer_unit:
+        q = q.where(or_(Record.source_department_id == viewer_unit, Record.source_department_id.is_(None)))
     if record_type:
         q = q.where(Record.record_type == record_type)
     if date_from:
@@ -205,7 +220,10 @@ async def get_records(
 async def get_record(db: AsyncSession, record_id: int) -> Optional[Record]:
     result = await db.execute(
         select(Record)
-        .options(selectinload(Record.files), selectinload(Record.author))
+        .options(
+            selectinload(Record.files), selectinload(Record.author),
+            selectinload(Record.department), selectinload(Record.source_department),
+        )
         .where(Record.id == record_id, Record.is_deleted == False)
     )
     return result.scalars().first()

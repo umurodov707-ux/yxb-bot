@@ -135,7 +135,7 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
     return out;
   }, [records]);
 
-  const targetDept = isAdmin ? deptId : user?.department_id;
+  const targetDept = isAdmin ? deptId : (fixedDeptId ?? user?.department_id);
   const canSend = !!targetDept && (text.trim().length > 0 || files.length > 0) && !sending;
 
   const handleSend = async () => {
@@ -290,6 +290,7 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
                   record={r}
                   mine={r.author_id === user?.id}
                   showDept={isAdmin && !deptId}
+                  contextDeptId={fixedDeptId}
                   onDelete={isAdmin ? handleDelete : undefined}
                 />
               ))}
@@ -315,6 +316,9 @@ export default function FeedPage({ embedded = false, fixedDeptId, backTo = '/adm
             </div>
           ) : (
             <>
+              {!isAdmin && fixedDeptId && fixedDeptId !== user?.department_id && deptName && (
+                <div className="send-to">Yuborish: <b>{user?.department_name}</b> → <b>{deptName}</b></div>
+              )}
               <div className="composer-types">
                 {SEND_TYPES.map(t => (
                   <button key={t} className={`chip${sendType === t ? ' active' : ''}`} onClick={() => setSendType(t)}>

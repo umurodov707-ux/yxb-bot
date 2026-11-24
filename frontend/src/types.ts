@@ -47,6 +47,8 @@ export interface FeedRecord {
   status: RecordStatus;
   department_id: number;
   department_name: string | null;
+  source_department_id?: number | null;
+  source_department_name?: string | null;
   author_id: number | null;
   author_name: string | null;
   broadcast_to: number[] | null;
