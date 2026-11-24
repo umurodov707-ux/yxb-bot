@@ -35,7 +35,7 @@ class UserOut(BaseModel):
     department_id: Optional[int]
     department_name: Optional[str] = None
     is_blocked: bool
-    created_at: datetime
+    created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 
@@ -63,7 +63,7 @@ class RegistrationRequestOut(BaseModel):
     department_id: Optional[int]
     department_name: Optional[str] = None
     status: RegistrationStatus
-    created_at: datetime
+    created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 

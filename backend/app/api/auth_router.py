@@ -5,6 +5,7 @@ DB da tekshiradi va yangi RegistrationRequest yaratadi.
 """
 from __future__ import annotations
 import hashlib, hmac, json, time, urllib.parse
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -110,14 +111,26 @@ async def me(
             )
             db.add(user)
             await db.commit()
-            await db.refresh(user)
+            res_user = await get_user_by_tg(db, tg["id"])
+            if res_user:
+                user = res_user
         else:
             raise HTTPException(status_code=404, detail="user_not_registered")
 
-    out = UserOut.model_validate(user)
-    if user.department:
-        out.department_name = user.department.name
-    return out
+    return UserOut(
+        id=user.id,
+        telegram_id=user.telegram_id,
+        username=user.username,
+        full_name=user.full_name,
+        position=user.position,
+        phone=user.phone,
+        role=user.role,
+        reg_status=user.reg_status,
+        department_id=user.department_id,
+        department_name=user.department.name if user.department else None,
+        is_blocked=user.is_blocked,
+        created_at=user.created_at or datetime.utcnow(),
+    )
 
 
 @router.post("/register", response_model=MsgResponse, status_code=201)
