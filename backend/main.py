@@ -160,7 +160,11 @@ async def telegram_webhook(
 ):
     if not hmac.compare_digest(x_telegram_bot_api_secret_token or "", WEBHOOK_SECRET):
         raise HTTPException(status_code=403)
-    await dp.feed_update(bot, Update.model_validate(update, context={"bot": bot}))
+    try:
+        await dp.feed_update(bot, Update.model_validate(update, context={"bot": bot}))
+    except Exception:
+        # 200 qaytaramiz, aks holda Telegram shu update'ni qayta-qayta yuborib navbatni to'sib qo'yadi
+        logger.exception("Update %s ni qayta ishlashda xato", update.get("update_id"))
     return {"ok": True}
 
 
