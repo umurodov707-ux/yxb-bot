@@ -34,6 +34,7 @@ export interface AttachedFile {
   mime_type: string | null;
   file_size: number | null;
   tg_file_id: string | null;
+  local_path: string | null;
 }
 
 export interface FeedRecord {

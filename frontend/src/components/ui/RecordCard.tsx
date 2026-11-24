@@ -85,7 +85,7 @@ export default function RecordCard({ record, onDelete, isAdmin }: Props) {
           style={{ marginTop: 6, padding: '4px 10px' }}
           onClick={() => setExpanded(v => !v)}
         >
-          {expanded ? '▲ Yig'rish' : '▼ Ko'proq'}
+          {expanded ? '▲ Yigʻrish' : '▼ Koʻproq'}
         </button>
       )}
 

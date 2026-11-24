@@ -95,7 +95,7 @@ app.include_router(records_router, prefix="/api/v1")
 app.include_router(admin_router,   prefix="/api/v1")
 
 
-# ── Webhook endpoint (optional) ───────────────────────────────────────────────
+# ── Webhook endpoint ──────────────────────────────────────────────────────────
 from aiogram.types import Update
 
 @app.post("/webhook/{token}")
@@ -111,6 +111,20 @@ async def telegram_webhook(token: str, update: dict):
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+# ── Frontend SPA — OXIRIDA ro'yxatdan o'tishi shart ──────────────────────────
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(FRONTEND_DIST):
+    from fastapi.responses import FileResponse
+    _assets_path = os.path.join(FRONTEND_DIST, "assets")
+    if os.path.isdir(_assets_path):
+        app.mount("/assets", StaticFiles(directory=_assets_path), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str = ""):
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 
 # Make bot accessible to handlers module
