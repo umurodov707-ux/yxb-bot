@@ -1,8 +1,9 @@
 """Pydantic request / response schemas."""
 from __future__ import annotations
+import os
 from datetime import datetime
 from typing import List, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .models import UserRole, RegistrationStatus, RecordType, RecordStatus
 
@@ -74,7 +75,23 @@ class FileOut(BaseModel):
     mime_type: Optional[str]
     file_size: Optional[int]
     tg_file_id: Optional[str]
+    url: Optional[str] = None
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _public_url(cls, obj):
+        local_path = getattr(obj, "local_path", None)
+        if local_path and not isinstance(obj, dict):
+            return {
+                "id": obj.id,
+                "original_name": obj.original_name,
+                "mime_type": obj.mime_type,
+                "file_size": obj.file_size,
+                "tg_file_id": obj.tg_file_id,
+                "url": "/uploads/" + os.path.basename(local_path.replace("\\", "/")),
+            }
+        return obj
 
 
 # ── Records ───────────────────────────────────────────────────────────────────

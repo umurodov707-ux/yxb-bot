@@ -3,13 +3,15 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { uz } from 'date-fns/locale';
 import {
   Search, SlidersHorizontal, Send, Paperclip, X, Inbox, MessageSquareText,
-  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2,
+  FileStack, Siren, CalendarDays, ArrowDown, Building2, CheckCircle2, ArrowLeft,
 } from 'lucide-react';
-import { getRecords, deleteRecord, createRecord, getDeptFlat } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { getRecords, deleteRecord, createRecord, getDeptFlat, markDeptSeen } from '../api';
 import type { Department, FeedRecord, RecordType } from '../types';
 import RecordCard, { TYPE_META } from '../components/ui/RecordCard';
 import AppHeader from '../components/ui/AppHeader';
 import { useAuth } from '../hooks/useAuth';
+import { parseDate } from '../lib/files';
 
 const FILTERS: ('' | RecordType)[] = ['', 'message', 'spravka', 'document', 'urgent', 'broadcast'];
 const SEND_TYPES: RecordType[] = ['message', 'spravka', 'document', 'urgent'];
@@ -21,9 +23,10 @@ function dayLabel(d: Date) {
   return format(d, 'd MMMM yyyy', { locale: uz });
 }
 
-export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
+export default function FeedPage({ embedded = false, fixedDeptId }: { embedded?: boolean; fixedDeptId?: number }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const navigate = useNavigate();
 
   const [records, setRecords] = useState<FeedRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +37,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [depts, setDepts] = useState<Department[]>([]);
-  const [deptId, setDeptId] = useState<number | ''>('');
+  const [deptId, setDeptId] = useState<number | ''>(fixedDeptId ?? '');
 
   const [text, setText] = useState('');
   const [sendType, setSendType] = useState<RecordType>('message');
@@ -67,7 +70,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
         limit: 200,
       });
       const list = [...res.data].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        (a, b) => parseDate(a.created_at).getTime() - parseDate(b.created_at).getTime(),
       );
       const maxId = list.reduce((m, r) => Math.max(m, r.id), 0);
       const wasBottom = nearBottom();
@@ -77,12 +80,15 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
       }
       lastIdRef.current = maxId;
       setRecords(list);
+      if (isAdmin && fixedDeptId && list.some(r => r.status === 'sent' && r.author_id !== user?.id)) {
+        markDeptSeen(fixedDeptId).catch(() => {});
+      }
       if (!silent) scrollBottom(false);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [keyword, typeFilter, dateFrom, dateTo, deptId]);
+  }, [keyword, typeFilter, dateFrom, dateTo, deptId, isAdmin, fixedDeptId, user?.id]);
 
   useEffect(() => {
     const t = setTimeout(() => load(), keyword ? 350 : 0);
@@ -107,7 +113,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
   }, [toast]);
 
   const stats = useMemo(() => {
-    const today = records.filter(r => isToday(new Date(r.created_at))).length;
+    const today = records.filter(r => isToday(parseDate(r.created_at))).length;
     const urgent = records.filter(r => r.record_type === 'urgent').length;
     const fileCount = records.reduce((n, r) => n + r.files.length, 0);
     return { today, urgent, fileCount };
@@ -122,7 +128,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
   const groups = useMemo(() => {
     const out: { label: string; items: FeedRecord[] }[] = [];
     records.forEach(r => {
-      const label = dayLabel(new Date(r.created_at));
+      const label = dayLabel(parseDate(r.created_at));
       const last = out[out.length - 1];
       if (last?.label === label) last.items.push(r); else out.push({ label, items: [r] });
     });
@@ -141,7 +147,9 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
       const fd = new FormData();
       fd.append('title', title);
       fd.append('body', t);
-      fd.append('record_type', sendType);
+      const onlyImages = files.length > 0 && files.every(f => f.type.startsWith('image/'));
+      const type = sendType === 'message' && files.length > 0 ? (onlyImages ? 'spravka' : 'document') : sendType;
+      fd.append('record_type', type);
       fd.append('department_id', String(targetDept));
       files.forEach(f => fd.append('files', f));
       await createRecord(fd);
@@ -164,12 +172,23 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
     setToast('Oʻchirildi');
   };
 
-  const activeFilters = [dateFrom, dateTo, deptId].filter(Boolean).length;
+  const activeFilters = [dateFrom, dateTo, fixedDeptId ? '' : deptId].filter(Boolean).length;
+  const deptName = depts.find(d => d.id === fixedDeptId)?.name;
 
   return (
     <>
       {!embedded && (
         <AppHeader onRefresh={() => load(true)} refreshing={refreshing} />
+      )}
+
+      {fixedDeptId && (
+        <div className="chat-head">
+          <button className="icon-btn" onClick={() => navigate('/admin/feed')} aria-label="Orqaga"><ArrowLeft size={19} /></button>
+          <div style={{ minWidth: 0 }}>
+            <div className="chat-head-name">{deptName ?? 'Boʻlim'}</div>
+            <div className="text-xs text-mute">{records.length} ta yozuv · faqat shu boʻlim</div>
+          </div>
+        </div>
       )}
 
       <div className="page">
@@ -208,7 +227,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
 
         {showFilters && (
           <div className="card filters-panel mb-3" style={{ padding: 14 }}>
-            {isAdmin && (
+            {isAdmin && !fixedDeptId && (
               <div className="form-group">
                 <label className="form-label"><Building2 size={12} style={{ verticalAlign: -1 }} /> Boʻlim</label>
                 <select value={deptId} onChange={e => setDeptId(e.target.value ? Number(e.target.value) : '')}>
@@ -228,7 +247,7 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
               </div>
             </div>
             {activeFilters > 0 && (
-              <button className="btn btn-ghost btn-sm mt-3" onClick={() => { setDateFrom(''); setDateTo(''); setDeptId(''); }}>
+              <button className="btn btn-ghost btn-sm mt-3" onClick={() => { setDateFrom(''); setDateTo(''); if (!fixedDeptId) setDeptId(''); }}>
                 <X size={14} /> Tozalash
               </button>
             )}
@@ -315,7 +334,11 @@ export default function FeedPage({ embedded = false }: { embedded?: boolean }) {
                 </button>
                 <input
                   ref={fileRef} type="file" multiple hidden
-                  onChange={e => { setFiles(fs => [...fs, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }}
+                  onChange={e => {
+                    const picked = Array.from(e.target.files ?? []);
+                    e.target.value = '';
+                    setFiles(fs => [...fs, ...picked]);
+                  }}
                 />
                 <textarea
                   rows={1}

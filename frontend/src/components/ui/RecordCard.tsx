@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Trash2, Download } from 'lucide-react';
 import type { FeedRecord, RecordType, AttachedFile } from '../../types';
+import Lightbox from './Lightbox';
+import { openFile, parseDate } from '../../lib/files';
 
 export const TYPE_META: Record<RecordType, { label: string; cls: string; icon: string }> = {
   spravka:   { label: 'Spravka',      cls: 'badge-blue',   icon: '📋' },
@@ -32,12 +34,15 @@ export function initials(name?: string | null) {
   return ((p[0]?.[0] ?? '') + (p[1]?.[0] ?? '')).toUpperCase() || 'Й';
 }
 
-const IMG_RE = /\.(jpe?g|png|webp|gif)$/i;
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)$/i;
+const VID_RE = /\.(mp4|mov|webm|m4v)$/i;
+const AUD_RE = /\.(ogg|oga|mp3|m4a|wav|opus)$/i;
 const isPhoto = (f: AttachedFile) =>
-  (f.mime_type?.startsWith('image/') ?? false) || IMG_RE.test(f.original_name ?? '') || IMG_RE.test(f.local_path ?? '');
+  (f.mime_type?.startsWith('image/') ?? false) || IMG_RE.test(f.original_name ?? '') || IMG_RE.test(f.url ?? '');
+const isVideo = (f: AttachedFile) => (f.mime_type?.startsWith('video/') ?? false) || VID_RE.test(f.original_name ?? '');
+const isAudio = (f: AttachedFile) => (f.mime_type?.startsWith('audio/') ?? false) || AUD_RE.test(f.original_name ?? '');
 
-const fileUrl = (f: AttachedFile) =>
-  `/uploads/${f.local_path ? f.local_path.replace(/\\/g, '/').split('/').pop() : f.tg_file_id}`;
+const fileUrl = (f: AttachedFile) => f.url ?? '';
 
 function fileKind(name: string) {
   const ext = (name.split('.').pop() ?? '').toLowerCase();
@@ -66,13 +71,23 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
   const [expanded, setExpanded] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const meta = TYPE_META[record.record_type] ?? TYPE_META.message;
-  const photos = record.files.filter(isPhoto);
-  const docs = record.files.filter(f => !isPhoto(f));
+  const [lightbox, setLightbox] = useState<number | null>(null);
+  const files = record.files.filter(f => !!f.url);
+  const photos = files.filter(isPhoto);
+  const videos = files.filter(f => !isPhoto(f) && isVideo(f));
+  const audios = files.filter(f => !isPhoto(f) && !isVideo(f) && isAudio(f));
+  const docs = files.filter(f => !isPhoto(f) && !isVideo(f) && !isAudio(f));
+  const shown = photos.slice(0, 4);
+  const extra = photos.length - shown.length;
   const body = record.body?.trim() ?? '';
-  const titleIsBody = body && body.startsWith(record.title.replace(/\.\.\.$/, ''));
+  const titleIsBody =
+    (body && body.startsWith(record.title.replace(/\.\.\.$/, ''))) ||
+    record.files.some(f => f.original_name === record.title) ||
+    record.title === "Tezkor ma'lumot" ||
+    record.title === '📸 Rasm';
   const long = body.length > 280;
   const author = record.author_name || "Noma'lum xodim";
-  const time = (() => { try { return format(new Date(record.created_at || record.record_date), 'HH:mm'); } catch { return ''; } })();
+  const time = (() => { try { return format(parseDate(record.created_at || record.record_date), 'HH:mm'); } catch { return ''; } })();
 
   return (
     <div className={`msg${mine ? ' mine' : ''}`}>
@@ -87,20 +102,26 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
 
         {!titleIsBody && <div className="bubble-title">{record.title}</div>}
 
-        {photos.length > 0 && (
-          <div className={`gallery${photos.length > 1 ? ' g2' : ''}`}>
-            {photos.map(f => (
-              <a key={f.id} href={fileUrl(f)} target="_blank" rel="noopener noreferrer">
-                <img
-                  src={fileUrl(f)}
-                  alt={f.original_name || 'Rasm'}
-                  loading="lazy"
-                  onError={e => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
-                />
-              </a>
+        {shown.length > 0 && (
+          <div className={`gallery g${shown.length}`}>
+            {shown.map((f, idx) => (
+              <button key={f.id} className="g-cell" onClick={() => setLightbox(idx)} aria-label="Rasmni ochish">
+                <img src={fileUrl(f)} alt={f.original_name || 'Rasm'} loading="lazy" />
+                {idx === shown.length - 1 && extra > 0 && <span className="g-more">+{extra}</span>}
+              </button>
             ))}
           </div>
         )}
+
+        {videos.map(f => (
+          <video key={f.id} className="media-video" src={fileUrl(f)} controls playsInline preload="metadata" />
+        ))}
+
+        {audios.map(f => (
+          <div key={f.id} className="media-audio">
+            <audio src={fileUrl(f)} controls preload="metadata" />
+          </div>
+        ))}
 
         {body && (
           <>
@@ -116,14 +137,14 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
         {docs.map(f => {
           const k = fileKind(f.original_name || '');
           return (
-            <a key={f.id} className="file-chip" href={fileUrl(f)} target="_blank" rel="noopener noreferrer">
+            <button key={f.id} className="file-chip" onClick={() => openFile(fileUrl(f), f.original_name || 'hujjat')}>
               <div className="file-ico" style={{ background: k.bg }}>{k.label}</div>
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
                 <div className="file-name">{f.original_name || 'Hujjat'}</div>
-                <div className="file-size">{fmtSize(f.file_size)}</div>
+                <div className="file-size">{fmtSize(f.file_size)}{f.file_size ? ' · ' : ''}Ochish</div>
               </div>
-              <Download size={18} color="var(--text-mute)" />
-            </a>
+              <Download size={18} color="var(--accent-2)" />
+            </button>
           );
         })}
 
@@ -144,6 +165,14 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
           {record.status === 'seen_by_admin' && <span style={{ color: 'var(--accent-2)' }}>✓✓</span>}
         </div>
       </div>
+
+      {lightbox !== null && (
+        <Lightbox
+          items={photos.map(f => ({ url: fileUrl(f), name: f.original_name || 'rasm.jpg' }))}
+          start={lightbox}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

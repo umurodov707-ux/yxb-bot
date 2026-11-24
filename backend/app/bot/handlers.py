@@ -144,100 +144,186 @@ async def notify_admins_new_record(
 
 
 # ── Xodim chatga rasm, hujjat yoki matn tashlaganda avtomatik saqlash ───────────
-import os, uuid
+import asyncio, logging, os, uuid
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from ..database import AsyncSessionLocal
 from ..models import User, Record, AttachedFile, RecordType, RecordStatus, RegistrationStatus
 
-@bot_router.message(F.photo | F.document | (F.text & ~F.text.startswith("/")))
+log = logging.getLogger(__name__)
+
+TG_DOWNLOAD_LIMIT = 20 * 1024 * 1024
+
+
+def _attachment(msg: Message):
+    """(file_id, original_name, mime, size, label) yoki None."""
+    if msg.photo:
+        p = msg.photo[-1]
+        return p.file_id, "photo.jpg", "image/jpeg", p.file_size, "📸 Rasm"
+    if msg.document:
+        d = msg.document
+        return d.file_id, d.file_name or "hujjat", d.mime_type or "application/octet-stream", d.file_size, f"📎 {d.file_name or 'Hujjat'}"
+    if msg.video:
+        v = msg.video
+        return v.file_id, v.file_name or "video.mp4", v.mime_type or "video/mp4", v.file_size, "🎬 Video"
+    if msg.voice:
+        v = msg.voice
+        return v.file_id, "ovozli_xabar.ogg", v.mime_type or "audio/ogg", v.file_size, "🎤 Ovozli xabar"
+    if msg.audio:
+        a = msg.audio
+        return a.file_id, a.file_name or "audio.mp3", a.mime_type or "audio/mpeg", a.file_size, "🎵 Audio"
+    return None
+
+
+_album_records: dict[str, int] = {}
+_album_locks: dict[str, asyncio.Lock] = {}
+
+
+async def _download(msg: Message, file_id: str, orig_name: str) -> str:
+    file_info = await msg.bot.get_file(file_id)
+    ext = os.path.splitext(orig_name)[1] or os.path.splitext(file_info.file_path or "")[1]
+    local_p = os.path.join(settings.UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    await msg.bot.download_file(file_info.file_path, local_p)
+    return local_p
+
+
+async def _append_to_album(msg: Message, record_id: int) -> None:
+    att = _attachment(msg)
+    if not att:
+        return
+    file_id, orig_name, mime, size, _ = att
+    try:
+        local_p = await _download(msg, file_id, orig_name)
+    except Exception:
+        log.exception("Albom faylini yuklab bo'lmadi")
+        return
+    async with AsyncSessionLocal() as db:
+        rec = await db.get(Record, record_id)
+        if not rec:
+            return
+        if msg.caption and not rec.body:
+            rec.body = msg.caption.strip()
+            rec.title = rec.body.split("\n")[0][:60]
+        db.add(AttachedFile(
+            record_id=record_id, original_name=orig_name, mime_type=mime,
+            file_size=size or os.path.getsize(local_p), local_path=local_p, tg_file_id=file_id,
+        ))
+        await db.commit()
+
+
+@bot_router.message(
+    F.photo | F.document | F.video | F.voice | F.audio | (F.text & ~F.text.startswith("/"))
+)
 async def handle_user_chat_message(msg: Message):
+    gid = msg.media_group_id
+    if not gid:
+        await _save_message(msg)
+        return
+    lock = _album_locks.setdefault(gid, asyncio.Lock())
+    async with lock:
+        if gid in _album_records:
+            await _append_to_album(msg, _album_records[gid])
+        else:
+            rid = await _save_message(msg)
+            if rid:
+                _album_records[gid] = rid
+    if len(_album_records) > 500:
+        for k in list(_album_records)[:250]:
+            _album_records.pop(k, None)
+            _album_locks.pop(k, None)
+
+
+async def _save_message(msg: Message) -> int | None:
     async with AsyncSessionLocal() as db:
         res = await db.execute(
-            select(User).where(User.telegram_id == msg.from_user.id)
+            select(User)
+            .options(selectinload(User.department))
+            .where(User.telegram_id == msg.from_user.id)
         )
         user = res.scalars().first()
 
-        if not user or user.reg_status != RegistrationStatus.approved:
+        if not user or user.reg_status != RegistrationStatus.approved or user.is_blocked:
             await msg.reply(
                 "⚠️ Siz hali ro‘yxatdan o‘tmagansiz yoki arizangiz tasdiqlanmagan.\n"
-                "Iltimos, pastdagi <b>Menu</b> tugmasi orqali ro‘yxatdan o‘ting.",
-                parse_mode="HTML"
+                "Pastdagi <b>📂 Ochish</b> tugmasi orqali ro‘yxatdan o‘ting.",
+                parse_mode="HTML",
+                reply_markup=main_menu_kb(settings.WEBAPP_URL),
             )
-            return
+            return None
 
-        dept_id = user.department_id
-        if not dept_id:
-            await msg.reply("⚠️ Sizga biriktirilgan bo‘lim topilmadi.")
-            return
+        if not user.department_id:
+            await msg.reply("⚠️ Sizga biriktirilgan bo‘lim topilmadi. Admin bilan bog‘laning.")
+            return None
 
-        title = "Tezkor ma'lumot"
-        body = msg.caption or msg.text or ""
-        rec_type = RecordType.spravka if msg.document else (RecordType.message if msg.text else RecordType.spravka)
+        full_name = user.full_name
+        dept_name = user.department.name if user.department else ""
+
+        att = _attachment(msg)
+        if att and att[3] and att[3] > TG_DOWNLOAD_LIMIT:
+            await msg.reply(
+                "⚠️ Fayl 20 MB dan katta — Telegram bot orqali qabul qilib bo‘lmaydi.\n"
+                "Iltimos, uni Mini App orqali yuklang (📂 Ochish → 📎)."
+            )
+            return None
+
+        text = (msg.caption or msg.text or "").strip()
+        if text:
+            title = text.split("\n")[0][:60] + ("..." if len(text) > 60 else "")
+        else:
+            title = (att[4] if msg.photo else att[1]) if att else "Tezkor ma'lumot"
 
         if msg.text:
-            title = msg.text[:40] + ("..." if len(msg.text) > 40 else "")
+            rec_type = RecordType.message
+        elif msg.document:
+            rec_type = RecordType.document
+        else:
+            rec_type = RecordType.spravka
 
         record = Record(
             title=title,
-            body=body,
+            body=text,
             record_type=rec_type,
             status=RecordStatus.sent,
-            department_id=dept_id,
+            department_id=user.department_id,
             author_id=user.id,
         )
         db.add(record)
         await db.flush()
 
-        # Fayl yoki Rasmni yuklab olish
-        saved_file = None
-        if msg.photo:
-            photo = msg.photo[-1]
-            file_info = await msg.bot.get_file(photo.file_id)
-            ext = os.path.splitext(file_info.file_path)[1] or ".jpg"
-            filename = f"{uuid.uuid4().hex}{ext}"
-            local_p = os.path.join(settings.UPLOAD_DIR, filename)
-
-            await msg.bot.download_file(file_info.file_path, local_p)
-            att = AttachedFile(
+        if att:
+            file_id, orig_name, mime, size, _ = att
+            try:
+                local_p = await _download(msg, file_id, orig_name)
+            except Exception:
+                log.exception("Telegram faylini yuklab bo'lmadi")
+                await db.rollback()
+                await msg.reply("❌ Faylni yuklab bo‘lmadi. Qaytadan yuboring yoki Mini App orqali yuklang.")
+                return None
+            db.add(AttachedFile(
                 record_id=record.id,
-                original_name="photo.jpg",
-                mime_type="image/jpeg",
-                file_size=photo.file_size or 0,
+                original_name=orig_name,
+                mime_type=mime,
+                file_size=size or os.path.getsize(local_p),
                 local_path=local_p,
-                tg_file_id=photo.file_id,
-            )
-            db.add(att)
-            saved_file = "📸 Rasm"
-
-        elif msg.document:
-            doc = msg.document
-            file_info = await msg.bot.get_file(doc.file_id)
-            ext = os.path.splitext(doc.file_name or file_info.file_path)[1] or ""
-            filename = f"{uuid.uuid4().hex}{ext}"
-            local_p = os.path.join(settings.UPLOAD_DIR, filename)
-
-            await msg.bot.download_file(file_info.file_path, local_p)
-            att = AttachedFile(
-                record_id=record.id,
-                original_name=doc.file_name or "document",
-                mime_type=doc.mime_type or "application/octet-stream",
-                file_size=doc.file_size or 0,
-                local_path=local_p,
-                tg_file_id=doc.file_id,
-            )
-            db.add(att)
-            saved_file = f"📎 Fayl ({doc.file_name or 'hujjat'})"
+                tg_file_id=file_id,
+            ))
 
         await db.commit()
+        record_id = record.id
 
-        resp_text = (
-            "✅ <b>Qabul qilindi va tizimga saqlandi!</b>\n\n"
-            f"👤 Xodim: <b>{user.full_name}</b>\n"
-            f"🏢 Bo‘lim: <b>{user.department.name if user.department else ''}</b>\n"
-        )
-        if saved_file:
-            resp_text += f"📦 Biriktirildi: {saved_file}\n"
-        resp_text += "\n<i>Admin va mas'ullar ushbu ma'lumotni Mini App portalida ko'rishlari mumkin.</i>"
+    resp_text = (
+        "✅ <b>Qabul qilindi va lentaga joylandi!</b>\n\n"
+        f"👤 {full_name}\n"
+        f"🏢 {dept_name}\n"
+    )
+    if att:
+        resp_text += f"📦 {att[4]}\n"
+    await msg.reply(resp_text, parse_mode="HTML", reply_markup=main_menu_kb(settings.WEBAPP_URL))
 
-        await msg.reply(resp_text, parse_mode="HTML")
-
+    if msg.from_user.id not in settings.admin_ids_list:
+        try:
+            await notify_admins_new_record(msg.bot, dept_name, title, full_name, rec_type.value)
+        except Exception:
+            log.exception("Admin xabarnomasi yuborilmadi")
+    return record_id

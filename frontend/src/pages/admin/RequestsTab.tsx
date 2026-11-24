@@ -1,3 +1,4 @@
+import { parseDate } from '../../lib/files';
 import React, { useCallback, useEffect, useState } from 'react';
 import { getPendingRequests, reviewRequest } from '../../api';
 import type { RegistrationRequest } from '../../types';
@@ -57,7 +58,7 @@ export default function RequestsTab() {
             {r.phone && <div className="text-sm text-mute" style={{ marginBottom: 2 }}>📞 {r.phone}</div>}
             {r.username && <div className="text-sm text-mute" style={{ marginBottom: 2 }}>🔗 @{r.username}</div>}
             <div className="text-xs text-mute" style={{ marginBottom: 10 }}>
-              🕐 {formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}
+              🕐 {formatDistanceToNow(parseDate(r.created_at), { addSuffix: true })}
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>

@@ -17,6 +17,9 @@ declare global {
           impactOccurred(style: 'light' | 'medium' | 'heavy'): void;
         };
         setHeaderColor?(color: string): void;
+        isVersionAtLeast?(version: string): boolean;
+        downloadFile?(params: { url: string; file_name: string }): void;
+        openLink?(url: string): void;
         setBackgroundColor?(color: string): void;
       };
     };

@@ -5,15 +5,17 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import (
-    APIRouter, Depends, HTTPException, Query,
+    APIRouter, Body, Depends, HTTPException, Query,
     UploadFile, File, Form, status,
 )
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..config import settings
 from ..database import get_db
 from ..auth import get_current_user, require_admin
-from ..models import User, UserRole, RecordType
+from ..models import User, UserRole, RecordType, Record, RecordStatus, Department
 from ..crud import (
     create_record, get_records, get_record,
     update_record, soft_delete_record, add_file, mark_record_seen,
@@ -118,6 +120,79 @@ async def create_new_record(
     # reload with files
     rec = await get_record(db, rec.id)
     return _record_to_out(rec)
+
+
+# ── GET /records/summary (admin) — bo'limlar ro'yxati, chatlar kabi ───────────
+@router.get("/summary")
+async def departments_summary(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    admin_ids = select(User.id).where(User.role == UserRole.admin)
+
+    agg = await db.execute(
+        select(
+            Record.department_id,
+            func.count(Record.id),
+            func.sum(case((Record.created_at >= today, 1), else_=0)),
+            func.sum(case(
+                (and_(Record.status == RecordStatus.sent,
+                      or_(Record.author_id.is_(None), Record.author_id.not_in(admin_ids))), 1),
+                else_=0,
+            )),
+            func.max(Record.id),
+        )
+        .where(Record.is_deleted == False)
+        .group_by(Record.department_id)
+    )
+    stats = {row[0]: row[1:] for row in agg.all()}
+
+    last_ids = [s[3] for s in stats.values() if s[3]]
+    last_map = {}
+    if last_ids:
+        res = await db.execute(
+            select(Record).options(selectinload(Record.author), selectinload(Record.files))
+            .where(Record.id.in_(last_ids))
+        )
+        last_map = {r.department_id: r for r in res.scalars().all()}
+
+    depts = (await db.execute(select(Department).order_by(Department.sort_order, Department.id))).scalars().all()
+    out = []
+    for d in depts:
+        total, today_cnt, unread, _ = stats.get(d.id, (0, 0, 0, None))
+        last = last_map.get(d.id)
+        out.append({
+            "department_id": d.id,
+            "name": d.name,
+            "code": d.code,
+            "parent_id": d.parent_id,
+            "total": total or 0,
+            "today": int(today_cnt or 0),
+            "unread": int(unread or 0),
+            "last_title": last.title if last else None,
+            "last_author": last.author.full_name if last and last.author else None,
+            "last_type": last.record_type.value if last else None,
+            "last_has_files": bool(last and last.files),
+            "last_at": last.created_at.isoformat() if last and last.created_at else None,
+        })
+    return out
+
+
+# ── POST /records/seen (admin) — bo'limdagi xabarlarni ko'rildi deb belgilash ──
+@router.post("/seen", response_model=MsgResponse)
+async def mark_department_seen(
+    department_id: int = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    await db.execute(
+        update(Record)
+        .where(Record.department_id == department_id, Record.status == RecordStatus.sent)
+        .values(status=RecordStatus.seen_by_admin)
+    )
+    await db.commit()
+    return MsgResponse(msg="OK")
 
 
 # ── GET /records/:id ──────────────────────────────────────────────────────────

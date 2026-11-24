@@ -34,7 +34,8 @@ export interface AttachedFile {
   mime_type: string | null;
   file_size: number | null;
   tg_file_id: string | null;
-  local_path: string | null;
+  local_path?: string | null;
+  url?: string | null;
 }
 
 export interface FeedRecord {
@@ -81,4 +82,19 @@ export interface SvodkaResponse {
   total: number;
   submitted: number;
   pending: number;
+}
+
+export interface DeptSummary {
+  department_id: number;
+  name: string;
+  code: string;
+  parent_id: number | null;
+  total: number;
+  today: number;
+  unread: number;
+  last_title: string | null;
+  last_author: string | null;
+  last_type: RecordType | null;
+  last_has_files: boolean;
+  last_at: string | null;
 }

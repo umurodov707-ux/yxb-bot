@@ -1,5 +1,5 @@
 import api from './client';
-import type { Department, User, FeedRecord, RegistrationRequest, SvodkaResponse, RecordType } from '../types';
+import type { Department, User, FeedRecord, RegistrationRequest, SvodkaResponse, RecordType, DeptSummary } from '../types';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const getMe = () => api.get<User>('/auth/me');
@@ -32,17 +32,18 @@ export const getRecords = (filters?: RecordFilters) =>
 export const getRecord = (id: number) => api.get< FeedRecord>(`/records/${id}`);
 
 export const createRecord = (formData: FormData) =>
-  api.post< FeedRecord>('/records', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  api.post<FeedRecord>('/records', formData, { timeout: 180_000 });
 
 export const broadcastRecord = (formData: FormData) =>
-  api.post<FeedRecord[]>('/records/broadcast', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  api.post<FeedRecord[]>('/records/broadcast', formData, { timeout: 180_000 });
 
 export const updateRecord = (id: number, data: Partial<Pick<FeedRecord, 'title' | 'body' | 'record_type'>>) =>
   api.patch< FeedRecord>(`/records/${id}`, data);
+
+export const getDeptSummary = () => api.get<DeptSummary[]>('/records/summary');
+
+export const markDeptSeen = (department_id: number) =>
+  api.post('/records/seen', { department_id });
 
 export const deleteRecord = (id: number) =>
   api.delete<{ ok: boolean; msg: string }>(`/records/${id}`);
