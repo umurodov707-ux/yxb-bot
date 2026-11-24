@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { openFile } from '../../lib/files';
 
-export interface LightboxItem { url: string; name: string }
+export interface LightboxItem { url: string; downloadUrl: string; name: string }
 
 interface Props {
   items: LightboxItem[];
@@ -42,7 +42,7 @@ export default function Lightbox({ items, start, onClose }: Props) {
     >
       <div className="lb-top">
         <span className="lb-count">{items.length > 1 ? `${i + 1} / ${items.length}` : item.name}</span>
-        <button className="lb-btn" onClick={() => openFile(item.url, item.name)} aria-label="Yuklab olish"><Download size={20} /></button>
+        <button className="lb-btn" onClick={() => openFile(item.downloadUrl, item.name)} aria-label="Yuklab olish"><Download size={20} /></button>
         <button className="lb-btn" onClick={onClose} aria-label="Yopish"><X size={22} /></button>
       </div>
       <img key={item.url} src={item.url} alt={item.name} className="lb-img" onClick={onClose} />

@@ -137,7 +137,7 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
         {docs.map(f => {
           const k = fileKind(f.original_name || '');
           return (
-            <button key={f.id} className="file-chip" onClick={() => openFile(fileUrl(f), f.original_name || 'hujjat')}>
+            <button key={f.id} className="file-chip" onClick={() => openFile(f.download_url ?? fileUrl(f), f.original_name || 'hujjat')}>
               <div className="file-ico" style={{ background: k.bg }}>{k.label}</div>
               <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
                 <div className="file-name">{f.original_name || 'Hujjat'}</div>
@@ -168,7 +168,7 @@ export default function RecordCard({ record, mine, showDept = true, onDelete }: 
 
       {lightbox !== null && (
         <Lightbox
-          items={photos.map(f => ({ url: fileUrl(f), name: f.original_name || 'rasm.jpg' }))}
+          items={photos.map(f => ({ url: fileUrl(f), downloadUrl: f.download_url ?? fileUrl(f), name: f.original_name || 'rasm.jpg' }))}
           start={lightbox}
           onClose={() => setLightbox(null)}
         />

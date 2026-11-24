@@ -36,6 +36,7 @@ export interface AttachedFile {
   tg_file_id: string | null;
   local_path?: string | null;
   url?: string | null;
+  download_url?: string | null;
 }
 
 export interface FeedRecord {

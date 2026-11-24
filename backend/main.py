@@ -164,6 +164,25 @@ async def telegram_webhook(
     return {"ok": True}
 
 
+@app.get("/files/{stored}/{name}", include_in_schema=False)
+async def download_file(stored: str, name: str, inline: bool = False):
+    """Faylni asl nomi va to'g'ri turi bilan beradi — telefon uni Word/Excel/PDF da ochadi."""
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    stored = os.path.basename(stored)
+    path = os.path.join(settings.UPLOAD_DIR, stored)
+    if not stored or not os.path.isfile(path):
+        raise HTTPException(status_code=404)
+    media_type = mimetypes.guess_type(name)[0] or mimetypes.guess_type(stored)[0] or "application/octet-stream"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=name,
+        content_disposition_type="inline" if inline else "attachment",
+    )
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}

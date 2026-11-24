@@ -1,6 +1,7 @@
 """Pydantic request / response schemas."""
 from __future__ import annotations
 import os
+from urllib.parse import quote
 from datetime import datetime
 from typing import List, Optional, Any
 from pydantic import BaseModel, Field, model_validator
@@ -76,6 +77,7 @@ class FileOut(BaseModel):
     file_size: Optional[int]
     tg_file_id: Optional[str]
     url: Optional[str] = None
+    download_url: Optional[str] = None
     model_config = {"from_attributes": True}
 
     @model_validator(mode="before")
@@ -83,13 +85,16 @@ class FileOut(BaseModel):
     def _public_url(cls, obj):
         local_path = getattr(obj, "local_path", None)
         if local_path and not isinstance(obj, dict):
+            stored = os.path.basename(local_path.replace("\\", "/"))
+            name = obj.original_name or stored
             return {
                 "id": obj.id,
                 "original_name": obj.original_name,
                 "mime_type": obj.mime_type,
                 "file_size": obj.file_size,
                 "tg_file_id": obj.tg_file_id,
-                "url": "/uploads/" + os.path.basename(local_path.replace("\\", "/")),
+                "url": f"/uploads/{stored}",
+                "download_url": f"/files/{stored}/{quote(name.replace('/', '_'))}",
             }
         return obj
 
