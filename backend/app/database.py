@@ -16,6 +16,10 @@ def _engine_args(url: str):
     if params.pop("sslmode", None) in ("require", "verify-ca", "verify-full"):
         connect_args["ssl"] = True
     params.pop("channel_binding", None)
+    if "-pooler." in base:
+        # Neon pooler (PgBouncer, transaction rejimi) asyncpg prepared statement keshini qo'llamaydi
+        connect_args["statement_cache_size"] = 0
+        params["prepared_statement_cache_size"] = "0"
     if params:
         base += "?" + "&".join(f"{k}={v}" for k, v in params.items())
     return base, {"connect_args": connect_args, "pool_pre_ping": True, "pool_recycle": 300}
