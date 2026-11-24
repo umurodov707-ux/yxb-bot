@@ -96,7 +96,6 @@ async def me(
 
     user = await get_user_by_tg(db, tg["id"])
     if not user:
-        # Agar admin bo'lsa avtomatik yaratib beramiz
         if tg["id"] in settings.admin_ids_list:
             from ..models import User, UserRole, RegistrationStatus, Department
             dept_res = await db.execute(select(Department).limit(1))
@@ -111,11 +110,18 @@ async def me(
             )
             db.add(user)
             await db.commit()
-            res_user = await get_user_by_tg(db, tg["id"])
-            if res_user:
-                user = res_user
+            user = await get_user_by_tg(db, tg["id"])
         else:
             raise HTTPException(status_code=404, detail="user_not_registered")
+
+    # Get department name safely
+    dept_name = None
+    if user.department_id:
+        from ..models import Department
+        d_res = await db.execute(select(Department).where(Department.id == user.department_id))
+        d_obj = d_res.scalars().first()
+        if d_obj:
+            dept_name = d_obj.name
 
     return UserOut(
         id=user.id,
@@ -127,8 +133,8 @@ async def me(
         role=user.role,
         reg_status=user.reg_status,
         department_id=user.department_id,
-        department_name=user.department.name if user.department else None,
-        is_blocked=user.is_blocked,
+        department_name=dept_name,
+        is_blocked=bool(user.is_blocked),
         created_at=user.created_at or datetime.utcnow(),
     )
 
