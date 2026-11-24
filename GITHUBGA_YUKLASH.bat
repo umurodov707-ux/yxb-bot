@@ -1,16 +1,16 @@
 @echo off
 cd /d "%~dp0"
 echo ===================================================
-echo Admin profilini avtomatik faollashtirish...
+echo Telegram Desktopda 100%% ishlashini ta'minlash...
 echo ===================================================
 
 git config --global --add safe.directory "%~dp0"
 git add .
-git commit -m "Auto-create and grant admin status on startup"
+git commit -m "Full Telegram Desktop support: auto-authenticate and unblock all endpoints"
 git push origin main
 
 echo.
 echo ===================================================
-echo Tayyor! Render 30 soniyada yangilaydi.
+echo Muvaffaqiyatli yuklandi! Render 30 soniyada yangilaydi.
 echo ===================================================
 pause
