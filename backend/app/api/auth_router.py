@@ -56,14 +56,6 @@ def _get_tg_id(
         tg = _parse_tg_init_data(x_tg_init_data)
         if tg:
             return tg
-        # Agar Telegram Desktop hash tekshiruvi xato bo'lsa ham unparsed initData ichidan user ni olamiz
-        try:
-            from urllib.parse import parse_qsl
-            parsed = dict(parse_qsl(x_tg_init_data))
-            if "user" in parsed:
-                return json.loads(parsed["user"])
-        except Exception:
-            pass
     raise HTTPException(status_code=401, detail="Telegram autentifikatsiya xatosi.")
 
 
@@ -79,20 +71,9 @@ async def me(
         tg = {"id": int(x_dev_tg_id), "first_name": "Dev", "username": None}
     elif x_tg_init_data:
         tg = _parse_tg_init_data(x_tg_init_data)
-        if not tg:
-            try:
-                from urllib.parse import parse_qsl
-                parsed = dict(parse_qsl(x_tg_init_data))
-                if "user" in parsed:
-                    tg = json.loads(parsed["user"])
-            except Exception:
-                pass
 
-    # Agar Telegram initData kelmagan bo'lsa (masalan Desktop yoki to'g'ridan-to'g'ri ochilganda)
-    # Default admin profilini beramiz
     if not tg:
-        admin_id = settings.admin_ids_list[0] if settings.admin_ids_list else 1278351471
-        tg = {"id": admin_id, "first_name": "Admin", "username": "admin"}
+        raise HTTPException(status_code=401, detail="Telegram autentifikatsiya xatosi.")
 
     user = await get_user_by_tg(db, tg["id"])
     if not user:

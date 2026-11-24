@@ -1,195 +1,147 @@
-import React, { useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { uz } from 'date-fns/locale';
-import type { FeedRecord, RecordType } from '../../types';
+import { useState } from 'react';
+import { format } from 'date-fns';
+import { Trash2, Download } from 'lucide-react';
+import type { FeedRecord, RecordType, AttachedFile } from '../../types';
 
-const TYPE_META: Record<RecordType, { label: string; cls: string; icon: string }> = {
-  spravka:   { label: 'Spravka',   cls: 'badge-blue',   icon: '📋' },
-  document:  { label: 'Hujjat',    cls: 'badge-purple', icon: '📄' },
-  message:   { label: 'Xabar',     cls: 'badge-green',  icon: '💬' },
-  urgent:    { label: 'Shoshilinch', cls: 'badge-red',  icon: '🚨' },
-  broadcast: { label: 'Telegramma/Prikas', cls: 'badge-orange', icon: '📢' },
+export const TYPE_META: Record<RecordType, { label: string; cls: string; icon: string }> = {
+  spravka:   { label: 'Spravka',      cls: 'badge-blue',   icon: '📋' },
+  document:  { label: 'Hujjat',       cls: 'badge-purple', icon: '📄' },
+  message:   { label: 'Xabar',        cls: 'badge-green',  icon: '💬' },
+  urgent:    { label: 'Shoshilinch',  cls: 'badge-red',    icon: '🚨' },
+  broadcast: { label: 'Telegramma',   cls: 'badge-orange', icon: '📢' },
 };
+
+const AVATAR_COLORS = [
+  'linear-gradient(135deg,#3b82f6,#22d3ee)',
+  'linear-gradient(135deg,#8b5cf6,#ec4899)',
+  'linear-gradient(135deg,#10b981,#84cc16)',
+  'linear-gradient(135deg,#f59e0b,#ef4444)',
+  'linear-gradient(135deg,#06b6d4,#6366f1)',
+  'linear-gradient(135deg,#f43f5e,#a855f7)',
+];
+
+export function avatarBg(seed: string) {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+export function initials(name?: string | null) {
+  if (!name) return 'Й';
+  const p = name.trim().split(/\s+/);
+  return ((p[0]?.[0] ?? '') + (p[1]?.[0] ?? '')).toUpperCase() || 'Й';
+}
+
+const IMG_RE = /\.(jpe?g|png|webp|gif)$/i;
+const isPhoto = (f: AttachedFile) =>
+  (f.mime_type?.startsWith('image/') ?? false) || IMG_RE.test(f.original_name ?? '') || IMG_RE.test(f.local_path ?? '');
+
+const fileUrl = (f: AttachedFile) =>
+  `/uploads/${f.local_path ? f.local_path.replace(/\\/g, '/').split('/').pop() : f.tg_file_id}`;
+
+function fileKind(name: string) {
+  const ext = (name.split('.').pop() ?? '').toLowerCase();
+  if (ext === 'pdf') return { label: 'PDF', bg: '#ef4444' };
+  if (['doc', 'docx'].includes(ext)) return { label: 'DOC', bg: '#3b82f6' };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { label: 'XLS', bg: '#10b981' };
+  if (['zip', 'rar', '7z'].includes(ext)) return { label: 'ZIP', bg: '#f59e0b' };
+  return { label: (ext || 'FILE').slice(0, 4).toUpperCase(), bg: '#64748b' };
+}
+
+function fmtSize(b?: number | null) {
+  if (!b) return '';
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
 
 interface Props {
   record: FeedRecord;
+  mine?: boolean;
+  showDept?: boolean;
   onDelete?: (id: number) => void;
-  isAdmin?: boolean;
 }
 
-export default function RecordCard({ record, onDelete, isAdmin }: Props) {
+export default function RecordCard({ record, mine, showDept = true, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const meta = TYPE_META[record.record_type] ?? TYPE_META.message;
-
-  const timeAgo = (() => {
-    try {
-      return formatDistanceToNow(new Date(record.record_date), { addSuffix: true, locale: uz });
-    } catch {
-      return '';
-    }
-  })();
-
-  const isPhoto = (filename?: string | null) => {
-    if (!filename) return false;
-    return /\.(jpg|jpeg|png|webp|gif)$/i.test(filename);
-  };
+  const photos = record.files.filter(isPhoto);
+  const docs = record.files.filter(f => !isPhoto(f));
+  const body = record.body?.trim() ?? '';
+  const titleIsBody = body && body.startsWith(record.title.replace(/\.\.\.$/, ''));
+  const long = body.length > 280;
+  const author = record.author_name || "Noma'lum xodim";
+  const time = (() => { try { return format(new Date(record.created_at || record.record_date), 'HH:mm'); } catch { return ''; } })();
 
   return (
-    <div
-      style={{
-        marginBottom: 14,
-        background: 'linear-gradient(145deg, #1e2230 0%, #171a24 100%)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: 12,
-        padding: '12px 14px',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.25)',
-        position: 'relative',
-      }}
-    >
-      {/* Telegram style Chat Bubble Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #4f8ef7 0%, #2954a3 100%)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 14,
-              fontWeight: 700,
-              boxShadow: '0 2px 8px rgba(79, 142, 247, 0.4)'
-            }}
-          >
-            {record.author_name ? record.author_name[0].toUpperCase() : 'Й'}
-          </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', letterSpacing: '-0.2px' }}>
-              {record.author_name || 'Noma\'lum xodim'}
-            </div>
-            {record.department_name && (
-              <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 600 }}>
-                🏢 {record.department_name}
-              </div>
-            )}
-          </div>
-        </div>
-        <span className={`badge ${meta.cls}`} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6 }}>
-          {meta.icon} {meta.label}
-        </span>
-      </div>
+    <div className={`msg${mine ? ' mine' : ''}`}>
+      <div className="avatar" style={{ background: avatarBg(author) }}>{initials(author)}</div>
 
-      {/* Yuborilgan rasmlar (Telegram photo gallery preview) */}
-      {record.files.filter(f => isPhoto(f.original_name) || isPhoto(f.local_path)).length > 0 && (
-        <div style={{ marginBottom: 10, borderRadius: 8, overflow: 'hidden' }}>
-          {record.files.filter(f => isPhoto(f.original_name) || isPhoto(f.local_path)).map(f => {
-            const fileName = f.local_path ? f.local_path.replace(/\\/g, '/').split('/').pop() : f.tg_file_id;
-            const fileUrl = `/uploads/${fileName}`;
-            return (
-              <a key={f.id} href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block' }}>
+      <div className={`bubble ${record.record_type === 'urgent' ? 'urgent' : ''} ${record.record_type === 'broadcast' ? 'broadcast' : ''}`}>
+        <div className="bubble-head">
+          <span className="bubble-author">{mine ? 'Siz' : author}</span>
+          {showDept && record.department_name && <span className="bubble-dept">{record.department_name}</span>}
+          <span className={`badge ${meta.cls}`} style={{ marginLeft: 'auto' }}>{meta.icon} {meta.label}</span>
+        </div>
+
+        {!titleIsBody && <div className="bubble-title">{record.title}</div>}
+
+        {photos.length > 0 && (
+          <div className={`gallery${photos.length > 1 ? ' g2' : ''}`}>
+            {photos.map(f => (
+              <a key={f.id} href={fileUrl(f)} target="_blank" rel="noopener noreferrer">
                 <img
-                  src={fileUrl}
+                  src={fileUrl(f)}
                   alt={f.original_name || 'Rasm'}
-                  style={{
-                    width: '100%',
-                    maxHeight: 280,
-                    objectFit: 'cover',
-                    borderRadius: 8,
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    transition: 'transform 0.2s',
-                  }}
-                  onError={(e) => {
-                    // Agar rasm hali yuklanmagan bo'lsa
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
+                  loading="lazy"
+                  onError={e => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
                 />
               </a>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {/* Body / Izoh matni */}
-      {record.body && (
-        <div
-          style={{
-            fontSize: 13.5,
-            color: '#cbd5e1',
-            lineHeight: 1.45,
-            marginBottom: 8,
-            whiteSpace: 'pre-wrap',
-            background: 'rgba(0,0,0,0.18)',
-            padding: '8px 10px',
-            borderRadius: 8,
-          }}
-        >
-          {record.body}
-        </div>
-      )}
+        {body && (
+          <>
+            <div className={`bubble-body${long && !expanded ? ' clamp' : ''}`}>{body}</div>
+            {long && (
+              <button className="link-btn" onClick={() => setExpanded(v => !v)}>
+                {expanded ? 'Yigʻish' : 'Toʻliq oʻqish'}
+              </button>
+            )}
+          </>
+        )}
 
-      {/* Boshqa biriktirilgan hujjat fayllar (PDF, Word, Excel) */}
-      {record.files.filter(f => !isPhoto(f.original_name) && !isPhoto(f.local_path)).length > 0 && (
-        <div style={{ marginTop: 6, marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {record.files.filter(f => !isPhoto(f.original_name) && !isPhoto(f.local_path)).map(f => {
-            const fileName = f.local_path ? f.local_path.replace(/\\/g, '/').split('/').pop() : f.tg_file_id;
-            return (
-              <a
-                key={f.id}
-                href={`/uploads/${fileName}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 12px',
-                  background: 'rgba(79, 142, 247, 0.12)',
-                  border: '1px solid rgba(79, 142, 247, 0.3)',
-                  borderRadius: 8,
-                  color: '#93c5fd',
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  textDecoration: 'none'
-                }}
-              >
-                <span style={{ fontSize: 16 }}>📄</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {f.original_name || 'Hujjatni yuklab olish'}
-                </span>
-                <span style={{ fontSize: 11, color: '#60a5fa' }}>⬇️ Yuklab olish</span>
-              </a>
-            );
-          })}
-        </div>
-      )}
+        {docs.map(f => {
+          const k = fileKind(f.original_name || '');
+          return (
+            <a key={f.id} className="file-chip" href={fileUrl(f)} target="_blank" rel="noopener noreferrer">
+              <div className="file-ico" style={{ background: k.bg }}>{k.label}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="file-name">{f.original_name || 'Hujjat'}</div>
+                <div className="file-size">{fmtSize(f.file_size)}</div>
+              </div>
+              <Download size={18} color="var(--text-mute)" />
+            </a>
+          );
+        })}
 
-      {/* Footer: Vaqt va Ko'rilganlik belgisi (Telegram double tick) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: '#64748b' }}>
-        <span>🕒 {timeAgo}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {record.status === 'seen_by_admin' ? (
-            <span style={{ color: '#38bdf8', fontWeight: 600 }}>✓✓ Ko‘rildi</span>
-          ) : (
-            <span>✓ Yetkazildi</span>
+        <div className="bubble-foot">
+          {onDelete && (
+            confirmDel ? (
+              <>
+                <button className="link-btn" style={{ color: 'var(--danger)' }} onClick={() => onDelete(record.id)}>Oʻchirish</button>
+                <button className="link-btn" style={{ color: 'var(--text-mute)' }} onClick={() => setConfirmDel(false)}>Bekor</button>
+              </>
+            ) : (
+              <button className="link-btn" style={{ color: 'var(--text-mute)' }} onClick={() => setConfirmDel(true)} aria-label="Oʻchirish">
+                <Trash2 size={14} />
+              </button>
+            )
           )}
-          {isAdmin && onDelete && (
-            <button
-              onClick={() => { if (window.confirm('Hujjatni o\'chirishni xohlaysizmi?')) onDelete(record.id); }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#ef4444',
-                fontSize: 12,
-                cursor: 'pointer',
-                marginLeft: 10
-              }}
-            >
-              🗑 O‘chirish
-            </button>
-          )}
+          <span>{time}</span>
+          {record.status === 'seen_by_admin' && <span style={{ color: 'var(--accent-2)' }}>✓✓</span>}
         </div>
       </div>
     </div>

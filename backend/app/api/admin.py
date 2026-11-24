@@ -80,6 +80,28 @@ async def block_user(
     return MsgResponse(msg="Yangilandi.")
 
 
+@router.delete("/users/{user_id}", response_model=MsgResponse)
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Admin xodimni tizimdan butunlay o'chirib tashlaydi."""
+    from ..models import User, RegistrationRequest
+    from sqlalchemy import select, delete
+
+    u_res = await db.execute(select(User).where(User.id == user_id))
+    user = u_res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Xodim topilmadi.")
+
+    # O'chirish
+    await db.execute(delete(RegistrationRequest).where(RegistrationRequest.telegram_id == user.telegram_id))
+    await db.delete(user)
+    await db.commit()
+    return MsgResponse(msg="Xodim tizimdan o'chirildi.")
+
+
 @router.post("/users/{user_id}/transfer", response_model=MsgResponse)
 async def transfer_user(
     user_id: int,

@@ -68,10 +68,8 @@ async def get_current_user(
     elif x_tg_init_data:
         tg_user = _verify_tg_init_data(x_tg_init_data)
 
-    # Telegram Desktop fallback: agar Desktop initData ni bermasa, default admin yoki birinchi foydalanuvchi
     if not tg_user:
-        admin_id = settings.admin_ids_list[0] if settings.admin_ids_list else 1278351471
-        tg_user = {"id": admin_id, "first_name": "Admin", "username": "admin"}
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram autentifikatsiya xatosi.")
 
     tg_id = tg_user["id"]
     result = await db.execute(select(User).where(User.telegram_id == tg_id))

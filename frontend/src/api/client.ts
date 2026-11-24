@@ -12,6 +12,12 @@ declare global {
         MainButton: { text: string; show(): void; hide(): void; onClick(fn: () => void): void };
         colorScheme: 'light' | 'dark';
         themeParams: Record<string, string>;
+        HapticFeedback?: {
+          notificationOccurred(type: 'error' | 'success' | 'warning'): void;
+          impactOccurred(style: 'light' | 'medium' | 'heavy'): void;
+        };
+        setHeaderColor?(color: string): void;
+        setBackgroundColor?(color: string): void;
       };
     };
   }

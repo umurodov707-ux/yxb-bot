@@ -10,7 +10,7 @@ Telegram Webhook uchun:
     BOT_TOKEN va WEBAPP_URL to'g'ri o'rnatilgan bo'lishi kerak.
 """
 from __future__ import annotations
-import asyncio, logging, os
+import asyncio, hashlib, hmac, logging, os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -37,6 +37,8 @@ bot = Bot(
 )
 dp = Dispatcher()
 dp.include_router(bot_router)
+
+WEBHOOK_SECRET = hashlib.sha256(f"{settings.SECRET_KEY}:{settings.BOT_TOKEN}".encode()).hexdigest()[:48]
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -70,13 +72,39 @@ async def lifespan(app: FastAPI):
                 u.reg_status = RegistrationStatus.approved
             await session.commit()
 
-    # Start polling in background (for dev).
-    # In production use Webhook instead.
-    if settings.BOT_TOKEN != "CHANGEME":
-        task = asyncio.create_task(dp.start_polling(bot))
+    task = None
+    use_webhook = settings.WEBAPP_URL.startswith("https://") and "example" not in settings.WEBAPP_URL
+    if settings.BOT_TOKEN != "CHANGEME" and use_webhook:
+        from aiogram.types import MenuButtonWebApp, WebAppInfo
+        hook_url = f"{settings.WEBAPP_URL.rstrip('/')}/webhook/tg"
+        await bot.set_webhook(
+            hook_url,
+            secret_token=WEBHOOK_SECRET,
+            allowed_updates=dp.resolve_used_update_types(),
+            drop_pending_updates=False,
+        )
+        try:
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(text="📂 Ochish", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+            )
+        except Exception:
+            logger.exception("Menu button setup failed")
+        logger.info("Webhook set: %s", hook_url)
+    elif settings.BOT_TOKEN != "CHANGEME":
+        async def run_polling():
+            await bot.delete_webhook(drop_pending_updates=False)
+            while True:
+                try:
+                    await dp.start_polling(bot, handle_signals=False, close_bot_session=False)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Polling crashed, restarting in 5s")
+                await asyncio.sleep(5)
+
+        task = asyncio.create_task(run_polling())
         logger.info("Bot polling started.")
     else:
-        task = None
         logger.warning("BOT_TOKEN not set — bot disabled.")
 
     yield
@@ -122,14 +150,17 @@ app.include_router(admin_router,   prefix="/api/v1")
 
 # ── Webhook endpoint ──────────────────────────────────────────────────────────
 from aiogram.types import Update
+from fastapi import Header, HTTPException
 
-@app.post("/webhook/{token}")
-async def telegram_webhook(token: str, update: dict):
-    if token != settings.BOT_TOKEN:
-        from fastapi import HTTPException
+
+@app.post("/webhook/tg", include_in_schema=False)
+async def telegram_webhook(
+    update: dict,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+):
+    if not hmac.compare_digest(x_telegram_bot_api_secret_token or "", WEBHOOK_SECRET):
         raise HTTPException(status_code=403)
-    tg_update = Update(**update)
-    await dp.feed_update(bot, tg_update)
+    await dp.feed_update(bot, Update.model_validate(update, context={"bot": bot}))
     return {"ok": True}
 
 
