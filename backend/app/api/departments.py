@@ -32,7 +32,6 @@ def _build_tree(all_depts):
 @router.get("/tree", response_model=List[DepartmentTree])
 async def department_tree(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
 ):
     """Barcha bo'limlar daraxti (ro'yxatdan o'tish uchun ham ishlatiladi)."""
     depts = await get_all_departments(db)
@@ -42,7 +41,6 @@ async def department_tree(
 @router.get("/flat", response_model=List[DepartmentShort])
 async def department_flat(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
 ):
     depts = await get_all_departments(db)
     return [
