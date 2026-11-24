@@ -94,6 +94,24 @@ async def register(
 
     # create user (pending) + request
     await create_user_from_tg(db, tg_id, username, body)
-    await create_registration_request(db, tg_id, username, body)
+    req = await create_registration_request(db, tg_id, username, body)
+
+    # Admin Telegramiga to'g'ridan-to'g'ri Tasdiqlash / Rad etish tugmalari bilan xabar yuborish
+    try:
+        from fastapi import Request
+        from ..bot.handlers import notify_admins_new_request
+        from ..main import app as main_app
+        dept_name = next((d.name for d in all_depts if d.id == body.department_id), "Noma'lum")
+        if hasattr(main_app.state, "bot") and main_app.state.bot:
+            await notify_admins_new_request(
+                bot=main_app.state.bot,
+                request_id=req.id,
+                full_name=body.full_name,
+                position=body.position,
+                dept_name=dept_name,
+                tg_username=username,
+            )
+    except Exception as e:
+        logger.error(f"Failed to notify admins: {e}")
 
     return MsgResponse(msg="Arizangiz yuborildi. Admin tasdiqlashini kuting.")

@@ -141,3 +141,103 @@ async def notify_admins_new_record(
             await bot.send_message(admin_id, text, parse_mode="HTML")
         except Exception:
             pass
+
+
+# ── Xodim chatga rasm, hujjat yoki matn tashlaganda avtomatik saqlash ───────────
+import os, uuid
+from sqlalchemy import select
+from ..database import AsyncSessionLocal
+from ..models import User, Record, AttachedFile, RecordType, RecordStatus, RegistrationStatus
+
+@bot_router.message(F.photo | F.document | (F.text & ~F.text.startswith("/")))
+async def handle_user_chat_message(msg: Message):
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(User).where(User.telegram_id == msg.from_user.id)
+        )
+        user = res.scalars().first()
+
+        if not user or user.reg_status != RegistrationStatus.approved:
+            await msg.reply(
+                "⚠️ Siz hali ro‘yxatdan o‘tmagansiz yoki arizangiz tasdiqlanmagan.\n"
+                "Iltimos, pastdagi <b>Menu</b> tugmasi orqali ro‘yxatdan o‘ting.",
+                parse_mode="HTML"
+            )
+            return
+
+        dept_id = user.department_id
+        if not dept_id:
+            await msg.reply("⚠️ Sizga biriktirilgan bo‘lim topilmadi.")
+            return
+
+        title = "Tezkor ma'lumot"
+        body = msg.caption or msg.text or ""
+        rec_type = RecordType.spravka if msg.document else (RecordType.message if msg.text else RecordType.spravka)
+
+        if msg.text:
+            title = msg.text[:40] + ("..." if len(msg.text) > 40 else "")
+
+        record = Record(
+            title=title,
+            body=body,
+            record_type=rec_type,
+            status=RecordStatus.sent,
+            department_id=dept_id,
+            author_id=user.id,
+        )
+        db.add(record)
+        await db.flush()
+
+        # Fayl yoki Rasmni yuklab olish
+        saved_file = None
+        if msg.photo:
+            photo = msg.photo[-1]
+            file_info = await msg.bot.get_file(photo.file_id)
+            ext = os.path.splitext(file_info.file_path)[1] or ".jpg"
+            filename = f"{uuid.uuid4().hex}{ext}"
+            local_p = os.path.join(settings.UPLOAD_DIR, filename)
+
+            await msg.bot.download_file(file_info.file_path, local_p)
+            att = AttachedFile(
+                record_id=record.id,
+                original_name="photo.jpg",
+                mime_type="image/jpeg",
+                file_size=photo.file_size or 0,
+                local_path=local_p,
+                tg_file_id=photo.file_id,
+            )
+            db.add(att)
+            saved_file = "📸 Rasm"
+
+        elif msg.document:
+            doc = msg.document
+            file_info = await msg.bot.get_file(doc.file_id)
+            ext = os.path.splitext(doc.file_name or file_info.file_path)[1] or ""
+            filename = f"{uuid.uuid4().hex}{ext}"
+            local_p = os.path.join(settings.UPLOAD_DIR, filename)
+
+            await msg.bot.download_file(file_info.file_path, local_p)
+            att = AttachedFile(
+                record_id=record.id,
+                original_name=doc.file_name or "document",
+                mime_type=doc.mime_type or "application/octet-stream",
+                file_size=doc.file_size or 0,
+                local_path=local_p,
+                tg_file_id=doc.file_id,
+            )
+            db.add(att)
+            saved_file = f"📎 Fayl ({doc.file_name or 'hujjat'})"
+
+        await db.commit()
+
+        resp_text = (
+            "✅ <b>Qabul qilindi va tizimga saqlandi!</b>\n\n"
+            f"👤 Xodim: <b>{user.full_name}</b>\n"
+            f"🏢 Bo‘lim: <b>{user.department.name if user.department else ''}</b>\n"
+        )
+        if saved_file:
+            resp_text += f"📦 Biriktirildi: {saved_file}\n"
+        resp_text += "\n<i>Admin va mas'ullar ushbu ma'lumotni Mini App portalida ko'rishlari mumkin.</i>"
+
+        await msg.reply(resp_text, parse_mode="HTML")
+
