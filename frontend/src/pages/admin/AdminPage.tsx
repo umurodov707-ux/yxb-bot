@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, NavLink, useParams } from 'react-router-dom';
 import { AdminDeptHome, DeptGroupPage } from '../DeptHome';
-import { MessagesSquare, UserPlus, Users, Megaphone, BarChart3 } from 'lucide-react';
+import { MessagesSquare, UserPlus, Users, Megaphone, BarChart3, ClipboardCheck } from 'lucide-react';
+import { AdminTasks, AdminTaskDetail } from '../TasksPages';
 import RequestsTab from './RequestsTab';
 import UsersTab from './UsersTab';
 import SvodkaTab from './SvodkaTab';
@@ -9,10 +10,11 @@ import BroadcastTab from './BroadcastTab';
 import FeedPage from '../FeedPage';
 import UnitsInbox from '../UnitsInbox';
 import AppHeader from '../../components/ui/AppHeader';
-import { getPendingRequests, getDeptSummary } from '../../api';
+import { getPendingRequests, getDeptSummary, getTasks } from '../../api';
 
 const NAV = [
   { path: '/admin/feed',      label: 'Lenta',     Icon: MessagesSquare, badge: 'unread' },
+  { path: '/admin/tasks',     label: 'Ijro',      Icon: ClipboardCheck, badge: 'tasks' },
   { path: '/admin/requests',  label: 'Arizalar',  Icon: UserPlus, badge: 'pending' },
   { path: '/admin/users',     label: 'Xodimlar',  Icon: Users },
   { path: '/admin/broadcast', label: 'Yuborish',  Icon: Megaphone },
@@ -48,11 +50,13 @@ function AdminGeneral() {
 export default function AdminPage() {
   const [pending, setPending] = useState(0);
   const [unread, setUnread] = useState(0);
+  const [toReview, setToReview] = useState(0);
 
   useEffect(() => {
     const load = () => {
       getPendingRequests().then(r => setPending(r.data.length)).catch(() => {});
       getDeptSummary().then(r => setUnread(r.data.reduce((n, d) => n + d.unread, 0))).catch(() => {});
+      getTasks().then(r => setToReview(r.data.reduce((n, t) => n + (t.submitted ?? 0), 0))).catch(() => {});
     };
     load();
     const t = setInterval(load, 20000);
@@ -69,6 +73,7 @@ export default function AdminPage() {
               {label}
               {badge === 'pending' && pending > 0 && <span className="nav-badge">{pending}</span>}
               {badge === 'unread' && unread > 0 && <span className="nav-badge">{unread}</span>}
+              {badge === 'tasks' && toReview > 0 && <span className="nav-badge">{toReview}</span>}
             </NavLink>
           ))}
         </nav>
@@ -83,6 +88,8 @@ export default function AdminPage() {
         <Route path="/feed/:deptId/units/general" element={<AdminGeneral />} />
         <Route path="/feed/:deptId/units/:unitId" element={<AdminThread />} />
         <Route path="/all" element={<FeedPage embedded />} />
+        <Route path="/tasks" element={<AdminTasks />} />
+        <Route path="/tasks/:taskId" element={<AdminTaskDetail />} />
         <Route path="/requests" element={<RequestsTab />} />
         <Route path="/users" element={<UsersTab />} />
         <Route path="/svodka" element={<SvodkaTab />} />

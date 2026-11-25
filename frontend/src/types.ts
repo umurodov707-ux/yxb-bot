@@ -120,3 +120,50 @@ export interface UnitRow {
   last_has_files: boolean;
   last_is_reply: boolean;
 }
+
+export type TaskStatus = 'pending' | 'submitted' | 'accepted' | 'returned';
+
+export interface TaskListItem {
+  id: number;
+  title: string;
+  body: string | null;
+  created_at: string;
+  deadline: string | null;
+  has_files: boolean;
+  // admin
+  total?: number;
+  accepted?: number;
+  submitted?: number;
+  returned?: number;
+  pending?: number;
+  overdue?: number | boolean;
+  // bo'linma
+  status?: TaskStatus;
+  review_note?: string | null;
+}
+
+export interface AssignmentRow {
+  unit_id: number;
+  unit_name: string | null;
+  unit_code: string | null;
+  status: TaskStatus;
+  overdue: boolean;
+  report_text: string | null;
+  report: FeedRecord | null;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  review_note: string | null;
+  reviewed_at: string | null;
+}
+
+export interface TaskCounts { total: number; accepted: number; submitted: number; returned: number; pending: number; overdue: number }
+
+export interface TaskDetail {
+  task: FeedRecord;
+  deadline: string | null;
+  counts?: TaskCounts;
+  assignments?: AssignmentRow[];
+  mine?: AssignmentRow;
+}
+
+export interface TaskUnit { id: number; name: string; group: string }

@@ -7,6 +7,7 @@ import AdminPage from './pages/admin/AdminPage';
 import PendingPage from './pages/PendingPage';
 import { EmployeeHome } from './pages/DeptHome';
 import UnitsInbox from './pages/UnitsInbox';
+import { UnitTaskDetail } from './pages/TasksPages';
 import AppHeader from './components/ui/AppHeader';
 import { useParams } from 'react-router-dom';
 
@@ -69,6 +70,7 @@ function AppRoutes() {
         <>
           <Route path="/" element={<EmployeeHome />} />
           <Route path="/d/:deptId" element={<UserDeptFeed />} />
+          <Route path="/tasks/:taskId" element={<><AppHeader /><UnitTaskDetail /></>} />
           <Route path="/inbox" element={<HeadInbox />} />
           <Route path="/inbox/general" element={<HeadGeneral />} />
           <Route path="/inbox/:unitId" element={<HeadThread />} />

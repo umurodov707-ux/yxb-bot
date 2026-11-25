@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 .env
 *.db
+*.log
 uploads/
 node_modules/
 .vite/

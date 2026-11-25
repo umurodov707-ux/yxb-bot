@@ -81,3 +81,16 @@ export const getSvodka = (params: {
   date_from?: string;
   date_to?: string;
 }) => api.get<SvodkaResponse>('/admin/svodka', { params });
+
+// ── Telegramma ijrosi ─────────────────────────────────────────────────────────
+import type { TaskListItem, TaskDetail, TaskUnit } from '../types';
+
+export const getTaskUnits = () => api.get<TaskUnit[]>('/tasks/units');
+export const getTasks = () => api.get<TaskListItem[]>('/tasks');
+export const getTask = (id: number) => api.get<TaskDetail>(`/tasks/${id}`);
+export const createTask = (fd: FormData) => api.post<{ id: number }>('/tasks', fd, { timeout: 180_000 });
+export const submitTask = (id: number, fd: FormData) =>
+  api.post<{ ok: boolean; msg: string }>(`/tasks/${id}/submit`, fd, { timeout: 180_000 });
+export const reviewTask = (id: number, unit_id: number, accept: boolean, note?: string) =>
+  api.post<{ ok: boolean; msg: string }>(`/tasks/${id}/review`, { unit_id, accept, note });
+export const remindTask = (id: number) => api.post<{ ok: boolean; msg: string }>(`/tasks/${id}/remind`, {});

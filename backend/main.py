@@ -150,11 +150,13 @@ from app.api.auth_router import router as auth_router
 from app.api.departments import router as dept_router
 from app.api.records import router as records_router
 from app.api.admin import router as admin_router
+from app.api.tasks import router as tasks_router
 
 app.include_router(auth_router,    prefix="/api/v1")
 app.include_router(dept_router,    prefix="/api/v1")
 app.include_router(records_router, prefix="/api/v1")
 app.include_router(admin_router,   prefix="/api/v1")
+app.include_router(tasks_router,   prefix="/api/v1")
 
 
 # ── Webhook endpoint ──────────────────────────────────────────────────────────

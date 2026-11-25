@@ -128,9 +128,43 @@ class Record(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_deleted = Column(Boolean, default=False)
+    # Telegramma/prikaz ijro muddati (UTC)
+    deadline = Column(DateTime(timezone=True), nullable=True)
 
     files = relationship("AttachedFile", back_populates="record",
                          cascade="all, delete-orphan")
+    assignments = relationship("Assignment", back_populates="record",
+                               cascade="all, delete-orphan",
+                               foreign_keys="Assignment.record_id")
+
+
+class AssignmentStatus(str, enum.Enum):
+    pending = "pending"        # yangi — hali bajarilmagan
+    submitted = "submitted"    # bo'linma "Bajarildi" dedi — admin tekshiruvida
+    accepted = "accepted"      # admin qabul qildi
+    returned = "returned"      # admin qaytardi — qayta bajarish kerak
+
+
+class Assignment(Base):
+    """Telegramma ijrosi: har bir ijrochi bo'linma uchun bitta yozuv."""
+    __tablename__ = "assignments"
+
+    id = Column(Integer, primary_key=True)
+    record_id = Column(Integer, ForeignKey("records.id"), nullable=False, index=True)
+    record = relationship("Record", back_populates="assignments", foreign_keys=[record_id])
+    unit_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
+    unit = relationship("Department")
+
+    status = Column(String(16), nullable=False, default=AssignmentStatus.pending.value)
+    report_text = Column(Text, nullable=True)
+    report_record_id = Column(Integer, ForeignKey("records.id"), nullable=True)
+    report_record = relationship("Record", foreign_keys=[report_record_id])
+    submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    submitter = relationship("User", foreign_keys=[submitted_by])
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    review_note = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # ---------------------------------------------------------------------------

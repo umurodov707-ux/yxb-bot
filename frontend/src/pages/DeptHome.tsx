@@ -8,6 +8,7 @@ import { deptMeta, gradient, unitNumber } from '../lib/deptMeta';
 import { parseDate } from '../lib/files';
 import { useAuth } from '../hooks/useAuth';
 import AppHeader from '../components/ui/AppHeader';
+import { UnitTasksSection } from './TasksPages';
 
 const GROUP_CODES = ['PC', 'PMS'];
 
@@ -223,6 +224,8 @@ export function EmployeeHome() {
           <div className="hello-hi">Assalomu alaykum,</div>
           <div className="hello-name">{user?.full_name?.split(' ').slice(0, 2).join(' ')}</div>
         </div>
+
+        <UnitTasksSection />
 
         <div className="section-title">
           Mening boʻlimim {user?.is_dept_head && <span className="head-badge"><Crown size={11} /> Rahbar</span>}
