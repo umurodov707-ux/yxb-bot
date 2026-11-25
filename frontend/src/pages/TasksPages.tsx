@@ -3,14 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   ArrowLeft, Plus, ScrollText, Clock3, CheckCircle2, AlertTriangle, Undo2, Hourglass,
-  BellRing, Paperclip, X, Send, ChevronRight, FileCheck2,
+  BellRing, Paperclip, X, Send, ChevronRight, FileCheck2, Search, Download, Pencil, Trash2,
 } from 'lucide-react';
 import {
   getTasks, getTask, createTask, submitTask, reviewTask, remindTask, getTaskUnits,
+  updateTask, deleteTask, exportTask,
 } from '../api';
 import type { TaskListItem, TaskDetail, TaskStatus, TaskUnit, AssignmentRow } from '../types';
 import RecordCard from '../components/ui/RecordCard';
-import { parseDate } from '../lib/files';
+import { parseDate, compressImage } from '../lib/files';
 import { useAuth } from '../hooks/useAuth';
 
 /* ── Holat belgilari ─────────────────────────────────────────────── */
@@ -83,15 +84,33 @@ function FilePicker({ files, setFiles }: { files: File[]; setFiles: (f: File[]) 
 }
 
 /* ══ ADMIN: telegrammalar ro'yxati ═══════════════════════════════ */
+type ListFilter = 'all' | 'active' | 'submitted' | 'overdue' | 'done';
+
 export function AdminTasks() {
   const nav = useNavigate();
   const [items, setItems] = useState<TaskListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
+  const [listFilter, setListFilter] = useState<ListFilter>('all');
   const { setToast, node } = useToast();
 
   const load = useCallback(() => getTasks().then(r => setItems(r.data)).finally(() => setLoading(false)), []);
   useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter(t => {
+      if (q && !t.title.toLowerCase().includes(q) && !(t.body || '').toLowerCase().includes(q)) return false;
+      const total = t.total ?? 0;
+      const done = total > 0 && (t.accepted ?? 0) === total;
+      if (listFilter === 'active') return !done;
+      if (listFilter === 'submitted') return (t.submitted ?? 0) > 0;
+      if (listFilter === 'overdue') return Number(t.overdue ?? 0) > 0;
+      if (listFilter === 'done') return done;
+      return true;
+    });
+  }, [items, query, listFilter]);
 
   return (
     <div className="page" style={{ paddingBottom: 40 }}>
@@ -103,6 +122,31 @@ export function AdminTasks() {
         <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Yangi</button>
       </div>
 
+      {!loading && items.length > 0 && (
+        <div className="mb-3">
+          <div style={{ position: 'relative', marginBottom: 8 }}>
+            <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-mute)' }} />
+            <input
+              style={{ paddingLeft: 34 }}
+              placeholder="Sarlavha boʻyicha qidirish…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="chips">
+            {([
+              ['all', 'Hammasi'],
+              ['active', 'Faol'],
+              ['submitted', 'Tekshiruvda'],
+              ['overdue', 'Kechikkan'],
+              ['done', 'Yakunlangan'],
+            ] as [ListFilter, string][]).map(([k, l]) => (
+              <button key={k} className={`chip${listFilter === k ? ' active' : ''}`} onClick={() => setListFilter(k)}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         [0, 1, 2].map(i => <div key={i} className="skeleton" style={{ height: 112, marginBottom: 10, borderRadius: 18 }} />)
       ) : items.length === 0 ? (
@@ -111,7 +155,12 @@ export function AdminTasks() {
           <div className="empty-title">Hali telegramma yoʻq</div>
           <div className="text-sm">«Yangi» tugmasi bilan telegramma joylang va ijrochilarni belgilang</div>
         </div>
-      ) : items.map((t, i) => {
+      ) : filtered.length === 0 ? (
+        <div className="empty">
+          <div className="empty-title">Topshiriq topilmadi</div>
+          <div className="text-sm">Qidiruv yoki filtrni oʻzgartirib koʻring</div>
+        </div>
+      ) : filtered.map((t, i) => {
         const total = t.total ?? 0;
         const seg = (n = 0) => `${total ? (n / total) * 100 : 0}%`;
         const left = timeLeft(t.deadline);
@@ -191,7 +240,8 @@ function NewTaskSheet({ onClose, onCreated }: { onClose: () => void; onCreated: 
       fd.append('body', body.trim());
       fd.append('unit_ids', Array.from(picked).join(','));
       if (deadline) fd.append('deadline', new Date(deadline).toISOString());
-      files.forEach(f => fd.append('files', f));
+      const ready = await Promise.all(files.map(compressImage));
+      ready.forEach(f => fd.append('files', f));
       const r = await createTask(fd);
       onCreated(r.data.id);
     } catch (err) {
@@ -274,6 +324,8 @@ export function AdminTaskDetail() {
   const [note, setNote] = useState('');
   const [returning, setReturning] = useState<number | null>(null);
   const [confirmRemind, setConfirmRemind] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const { setToast, node } = useToast();
 
   const load = useCallback(() => getTask(id).then(r => setData(r.data)), [id]);
@@ -302,6 +354,21 @@ export function AdminTaskDetail() {
     setConfirmRemind(false);
     try { setToast((await remindTask(id)).data.msg); } catch (e) { setToast(errText(e)); }
   };
+  const downloadCsv = async () => {
+    try {
+      const r = await exportTask(id);
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = `ijro_${id}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setToast(errText(e)); }
+  };
+  const removeTask = async () => {
+    try {
+      await deleteTask(id);
+      nav('/admin/tasks', { replace: true });
+    } catch (e) { setToast(errText(e)); setConfirmDel(false); }
+  };
 
   return (
     <>
@@ -311,7 +378,17 @@ export function AdminTaskDetail() {
           <div className="chat-head-name">{data.task.title}</div>
           <div className="text-xs text-mute">Ijro nazorati</div>
         </div>
+        <button className="icon-btn" onClick={downloadCsv} title="Excel (CSV) yuklash" aria-label="Excel yuklash"><Download size={18} /></button>
+        <button className="icon-btn" onClick={() => setEditing(true)} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={18} /></button>
+        <button className="icon-btn" onClick={() => setConfirmDel(true)} title="Oʻchirish" aria-label="Oʻchirish"><Trash2 size={18} /></button>
       </div>
+      {confirmDel && (
+        <div className="confirm-row" style={{ margin: '8px 14px 0' }}>
+          <span>Telegramma oʻchirilsinmi?</span>
+          <button className="btn btn-danger btn-sm" onClick={removeTask}>Ha, oʻchirish</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(false)}>Bekor</button>
+        </div>
+      )}
       <div className="page" style={{ paddingBottom: 40 }}>
         <RecordCard record={data.task} showDept={false} />
 
@@ -385,8 +462,84 @@ export function AdminTaskDetail() {
           );
         })}
       </div>
+      {editing && (
+        <EditTaskSheet
+          taskId={id}
+          initialTitle={data.task.title}
+          initialBody={data.task.body || ''}
+          initialDeadline={data.deadline}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); setToast('Yangilandi'); load(); }}
+        />
+      )}
       {node}
     </>
+  );
+}
+
+function EditTaskSheet({
+  taskId, initialTitle, initialBody, initialDeadline, onClose, onSaved,
+}: {
+  taskId: number; initialTitle: string; initialBody: string; initialDeadline: string | null;
+  onClose: () => void; onSaved: () => void;
+}) {
+  const toLocal = (iso: string | null) => {
+    if (!iso) return '';
+    const d = parseDate(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
+  const [deadline, setDeadline] = useState(() => toLocal(initialDeadline));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return setError('Sarlavha boʻsh boʻlmasligi kerak.');
+    setBusy(true); setError('');
+    try {
+      await updateTask(taskId, {
+        title: title.trim(),
+        body: body.trim(),
+        deadline: deadline ? new Date(deadline).toISOString() : null,
+        clear_deadline: !deadline,
+      });
+      onSaved();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="sheet-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="sheet" onSubmit={submit}>
+        <div className="sheet-grip" />
+        <div className="flex items-center justify-between mb-3">
+          <div className="page-title" style={{ fontSize: 19 }}>Telegrammani tahrirlash</div>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Yopish"><X size={18} /></button>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Sarlavha</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Mazmuni</label>
+          <textarea value={body} onChange={e => setBody(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Ijro muddati</label>
+          <input type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)} />
+        </div>
+        {error && <div className="form-error mb-2">{error}</div>}
+        <button className="btn btn-primary w-full" disabled={busy}>
+          {busy ? 'Saqlanmoqda…' : 'Saqlash'}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -451,7 +604,8 @@ export function UnitTaskDetail() {
     try {
       const fd = new FormData();
       fd.append('report_text', text.trim());
-      files.forEach(f => fd.append('files', f));
+      const ready = await Promise.all(files.map(compressImage));
+      ready.forEach(f => fd.append('files', f));
       const r = await submitTask(id, fd);
       setToast(r.data.msg); setText(''); setFiles([]);
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');

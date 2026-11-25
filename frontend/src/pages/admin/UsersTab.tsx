@@ -7,6 +7,7 @@ export default function UsersTab() {
   const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'heads' | 'blocked'>('all');
   const [transfering, setTransfering] = useState<{userId: number; deptId: number | ''} | null>(null);
 
   const load = useCallback(async () => {
@@ -22,11 +23,17 @@ export default function UsersTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = users.filter(u =>
-    u.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    u.position.toLowerCase().includes(search.toLowerCase()) ||
-    (u.department_name || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchesSearch =
+      u.full_name.toLowerCase().includes(q) ||
+      u.position.toLowerCase().includes(q) ||
+      (u.department_name || '').toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    if (roleFilter === 'heads') return u.is_dept_head;
+    if (roleFilter === 'blocked') return u.is_blocked;
+    return true;
+  });
 
   const handleBlock = async (u: User) => {
     await blockUser(u.id, !u.is_blocked);
@@ -59,12 +66,20 @@ export default function UsersTab() {
       </div>
 
       <input
-        className="mb-3"
+        className="mb-2"
         placeholder="🔍 Qidirish..."
         value={search}
         onChange={e => setSearch(e.target.value)}
-        style={{ marginBottom: 12 }}
       />
+      <div className="chips mb-3">
+        {([
+          ['all', `Hammasi (${users.length})`],
+          ['heads', `Rahbarlar (${users.filter(u => u.is_dept_head).length})`],
+          ['blocked', `Bloklangan (${users.filter(u => u.is_blocked).length})`],
+        ] as ['all' | 'heads' | 'blocked', string][]).map(([k, l]) => (
+          <button key={k} className={`chip${roleFilter === k ? ' active' : ''}`} onClick={() => setRoleFilter(k)}>{l}</button>
+        ))}
+      </div>
 
       {filtered.map(u => (
         <div key={u.id} className="card" style={{ marginBottom: 10 }}>

@@ -297,30 +297,49 @@ async def get_svodka(
     db: AsyncSession,
     date_from: datetime,
     date_to: datetime,
-    parent_code: str = "PC",   # "PC" or "PMS"
+    parent_code: str = "PC",   # "PC", "PMS", or "HEAD"
 ) -> dict:
     """
-    Tanlangan sana oralig'ida qaysi quyi bo'linmalar yozuv tashlagan / tashlamamagan.
+    Tanlangan sana oralig'ida qaysi bo'linmalar yozuv tashlagan / tashlamamagan.
     """
-    # find parent
-    parent_res = await db.execute(
-        select(Department).where(Department.code == parent_code)
-    )
-    parent = parent_res.scalars().first()
-    if not parent:
-        return {"rows": [], "total": 0, "submitted": 0, "pending": 0}
+    if parent_code == "HEAD":
+        children_res = await db.execute(
+            select(Department)
+            .where(
+                Department.parent_id.is_(None),
+                Department.code.notin_(["PC", "PMS"]),
+                Department.read_only_broadcast == False,
+                Department.is_active == True,
+            )
+            .order_by(Department.sort_order, Department.id)
+        )
+        children = children_res.scalars().all()
+    else:
+        parent_res = await db.execute(
+            select(Department).where(Department.code == parent_code)
+        )
+        parent = parent_res.scalars().first()
+        if not parent:
+            return {"rows": [], "total": 0, "submitted": 0, "pending": 0}
 
-    children_res = await db.execute(
-        select(Department).where(Department.parent_id == parent.id, Department.is_active == True)
-    )
-    children = children_res.scalars().all()
+        children_res = await db.execute(
+            select(Department)
+            .where(Department.parent_id == parent.id, Department.is_active == True)
+            .order_by(Department.sort_order, Department.id)
+        )
+        children = children_res.scalars().all()
 
     rows = []
     submitted = 0
     for child in children:
+        dept_filter = (
+            or_(Record.department_id == child.id, Record.source_department_id == child.id)
+            if parent_code == "HEAD"
+            else (Record.department_id == child.id)
+        )
         count_res = await db.execute(
             select(func.count(Record.id)).where(
-                Record.department_id == child.id,
+                dept_filter,
                 Record.is_deleted == False,
                 Record.record_date >= date_from,
                 Record.record_date <= date_to,
@@ -330,7 +349,7 @@ async def get_svodka(
 
         last_res = await db.execute(
             select(func.max(Record.record_date)).where(
-                Record.department_id == child.id,
+                dept_filter,
                 Record.is_deleted == False,
             )
         )

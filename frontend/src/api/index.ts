@@ -77,7 +77,7 @@ export const transferUser = (user_id: number, department_id: number) =>
   api.post(`/admin/users/${user_id}/transfer`, { department_id });
 
 export const getSvodka = (params: {
-  group: 'PC' | 'PMS';
+  group: 'PC' | 'PMS' | 'HEAD';
   date_from?: string;
   date_to?: string;
 }) => api.get<SvodkaResponse>('/admin/svodka', { params });
@@ -94,3 +94,8 @@ export const submitTask = (id: number, fd: FormData) =>
 export const reviewTask = (id: number, unit_id: number, accept: boolean, note?: string) =>
   api.post<{ ok: boolean; msg: string }>(`/tasks/${id}/review`, { unit_id, accept, note });
 export const remindTask = (id: number) => api.post<{ ok: boolean; msg: string }>(`/tasks/${id}/remind`, {});
+export const updateTask = (id: number, data: { title?: string; body?: string; deadline?: string | null; clear_deadline?: boolean }) =>
+  api.patch<{ ok: boolean; msg: string }>(`/tasks/${id}`, data);
+export const deleteTask = (id: number) => api.delete<{ ok: boolean; msg: string }>(`/tasks/${id}`);
+export const exportTask = (id: number) => api.get<Blob>(`/tasks/${id}/export`, { responseType: 'blob' });
+export const sendSvodkaBot = () => api.post<{ ok: boolean; msg: string }>('/admin/svodka/send-bot', {});

@@ -7,7 +7,7 @@ echo ===================================================
 
 git config --global --add safe.directory "%~dp0"
 git add .
-git commit -m "Set Chat/Lenta as the primary first tab in Admin Mini App"
+git commit -m "Add Telegramma Ijro tracking, deep-links, reminders, CSV export & UI improvements"
 git push origin main
 
 echo.

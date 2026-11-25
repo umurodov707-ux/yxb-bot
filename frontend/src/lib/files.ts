@@ -37,3 +37,30 @@ export function openFile(url: string, name: string) {
   } catch { /* fall through */ }
   openExternal(abs);
 }
+
+/** 600 KB dan katta rasmlarni yuklashdan oldin yengillashtiradi. */
+export async function compressImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size < 600_000) return file;
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    URL.revokeObjectURL(url);
+    const max = 1600;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.82));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}

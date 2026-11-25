@@ -107,8 +107,31 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("BOT_TOKEN not set — bot disabled.")
 
+    reminder_task = None
+    if settings.BOT_TOKEN != "CHANGEME":
+        async def reminder_loop():
+            from app.api.admin import send_daily_svodka
+            from app.api.tasks import run_deadline_reminders
+            while True:
+                try:
+                    await run_deadline_reminders(app)
+                    await send_daily_svodka(app)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Deadline reminder loop error")
+                await asyncio.sleep(300)
+
+        reminder_task = asyncio.create_task(reminder_loop())
+
     yield
 
+    if reminder_task:
+        reminder_task.cancel()
+        try:
+            await reminder_task
+        except asyncio.CancelledError:
+            pass
     if task:
         task.cancel()
         try:

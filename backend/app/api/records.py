@@ -184,7 +184,14 @@ async def create_new_record(
         await _notify_unit(request, db, reply_unit.id, text)
     return _record_to_out(rec)
 
-async def _notify_unit(request, db: AsyncSession, unit_id: int, text: str) -> int:
+async def _notify_unit(
+    request,
+    db: AsyncSession,
+    unit_id: int,
+    text: str,
+    webapp_path: Optional[str] = None,
+    btn_text: str = "📂 Mini App'ni ochish",
+) -> int:
     """Bo'linmaning tasdiqlangan xodimlariga bot orqali xabar yuboradi."""
     import logging
     from ..bot.keyboards import main_menu_kb
@@ -199,10 +206,12 @@ async def _notify_unit(request, db: AsyncSession, unit_id: int, text: str) -> in
             User.is_blocked == False,
         )
     )).scalars().all()
+    url = f"{settings.WEBAPP_URL.rstrip('/')}{webapp_path}" if webapp_path else settings.WEBAPP_URL
+    kb = main_menu_kb(url, btn_text)
     sent = 0
     for tg_id in staff:
         try:
-            await bot.send_message(tg_id, text, reply_markup=main_menu_kb(settings.WEBAPP_URL))
+            await bot.send_message(tg_id, text, reply_markup=kb)
             sent += 1
         except Exception:
             logging.getLogger(__name__).warning("Xabar yuborilmadi: %s", tg_id)

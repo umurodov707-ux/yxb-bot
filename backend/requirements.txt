@@ -7,3 +7,4 @@ aiosqlite>=0.20
 pydantic-settings>=2.5
 python-multipart>=0.0.12
 aiofiles>=24.1
+fpdf2>=2.8

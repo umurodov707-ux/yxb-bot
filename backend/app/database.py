@@ -49,6 +49,10 @@ def _add_missing_columns(sync_conn):
         sync_conn.execute(text("ALTER TABLE records ADD COLUMN deadline TIMESTAMP WITH TIME ZONE"
                                if sync_conn.dialect.name == "postgresql" else
                                "ALTER TABLE records ADD COLUMN deadline DATETIME"))
+    if "reminded_at" not in cols:
+        sync_conn.execute(text("ALTER TABLE records ADD COLUMN reminded_at TIMESTAMP WITH TIME ZONE"
+                               if sync_conn.dialect.name == "postgresql" else
+                               "ALTER TABLE records ADD COLUMN reminded_at DATETIME"))
     if "source_department_id" not in cols:
         sync_conn.execute(text(
             "ALTER TABLE records ADD COLUMN source_department_id INTEGER REFERENCES departments(id)"

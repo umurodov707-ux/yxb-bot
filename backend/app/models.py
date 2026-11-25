@@ -130,6 +130,7 @@ class Record(Base):
     is_deleted = Column(Boolean, default=False)
     # Telegramma/prikaz ijro muddati (UTC)
     deadline = Column(DateTime(timezone=True), nullable=True)
+    reminded_at = Column(DateTime(timezone=True), nullable=True)
 
     files = relationship("AttachedFile", back_populates="record",
                          cascade="all, delete-orphan")

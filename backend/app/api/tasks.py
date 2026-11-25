@@ -1,10 +1,11 @@
 """Telegramma / prikaz ijrosi: admin bo'linmalarga topshiradi, bo'linmalar bajaradi, admin qabul qiladi."""
 from __future__ import annotations
-import logging, os, uuid
-from datetime import datetime, timezone
+import csv, io, logging, os, uuid
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -59,14 +60,21 @@ async def _save_uploads(db: AsyncSession, rec_id: int, files: List[UploadFile]) 
                        file_size=len(content), local_path=path)
 
 
-async def _notify_admins(request: Request, text: str) -> None:
+async def _notify_admins(
+    request: Request,
+    text: str,
+    webapp_path: Optional[str] = None,
+    btn_text: str = "📂 Mini App'ni ochish",
+) -> None:
     bot = getattr(request.app.state, "bot", None)
     if not bot:
         return
     from ..bot.keyboards import main_menu_kb
+    url = f"{settings.WEBAPP_URL.rstrip('/')}{webapp_path}" if webapp_path else settings.WEBAPP_URL
+    kb = main_menu_kb(url, btn_text)
     for admin_id in settings.admin_ids_list:
         try:
-            await bot.send_message(admin_id, text, reply_markup=main_menu_kb(settings.WEBAPP_URL))
+            await bot.send_message(admin_id, text, reply_markup=kb)
         except Exception:
             log.warning("Adminga xabar yuborilmadi: %s", admin_id)
 
@@ -178,7 +186,7 @@ async def create_task(
         text += f"\n\n⏰ Ijro muddati: <b>{dl}</b>"
     text += "\n\nMini App → «Ijro uchun» bo'limida «Bajarildi» deb belgilang."
     for uid in ids:
-        await _notify_unit(request, db, uid, text)
+        await _notify_unit(request, db, uid, text, webapp_path=f"/tasks/{rec.id}", btn_text="📋 Topshiriqni ochish")
     return {"id": rec.id, **_counts(task)}
 
 
@@ -267,8 +275,12 @@ async def submit_task(
 
     unit = await db.get(Department, user.department_id)
     unit_name = unit.name if unit else ""
-    await _notify_admins(request, f"✅ <b>{unit_name}</b> telegrammani bajardi — tekshiring:\n\n"
-                                  f"📜 {rec.title}\n📝 {report_text.strip()[:400]}")
+    await _notify_admins(
+        request,
+        f"✅ <b>{unit_name}</b> telegrammani bajardi — tekshiring:\n\n📜 {rec.title}\n📝 {report_text.strip()[:400]}",
+        webapp_path=f"/admin/tasks/{task_id}",
+        btn_text="🔍 Tekshirish",
+    )
     return MsgResponse(msg="Yuborildi. Admin tekshiradi.")
 
 
@@ -299,7 +311,7 @@ async def review_task(
         text = f"✅ <b>Ijro qabul qilindi</b>\n\n📜 {rec.title}"
     else:
         text = f"↩ <b>Ijro qaytarildi — qayta bajaring</b>\n\n📜 {rec.title}\n💬 {a.review_note}"
-    await _notify_unit(request, db, unit_id, text)
+    await _notify_unit(request, db, unit_id, text, webapp_path=f"/tasks/{task_id}", btn_text="📋 Topshiriqni ochish")
     return MsgResponse(msg="Qabul qilindi." if accept else "Qaytarildi.")
 
 
@@ -313,5 +325,130 @@ async def remind_task(task_id: int, request: Request, db: AsyncSession = Depends
     text = f"⏰ <b>Eslatma: telegramma ijrosi</b>\n\n📜 {rec.title}" + (f"\nMuddat: <b>{dl}</b>" if dl else "")
     sent = 0
     for uid in targets:
-        sent += await _notify_unit(request, db, uid, text)
+        sent += await _notify_unit(request, db, uid, text, webapp_path=f"/tasks/{task_id}", btn_text="📋 Topshiriqni ochish")
     return MsgResponse(msg=f"{len(targets)} ta bo'linmaga ({sent} xodim) eslatma yuborildi.")
+
+
+# ── PATCH /tasks/{id} — admin: sarlavha, matn, muddatni tahrirlash ────────────
+@router.patch("/{task_id}", response_model=MsgResponse)
+async def update_task(
+    task_id: int,
+    title: Optional[str] = Body(None),
+    body: Optional[str] = Body(None),
+    deadline: Optional[datetime] = Body(None),
+    clear_deadline: bool = Body(False),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    rec = await _load_task(db, task_id)
+    rec_db = await db.get(Record, rec.id)
+    if title is not None:
+        if not title.strip():
+            raise HTTPException(status_code=400, detail="Sarlavha bo'sh bo'lmasligi kerak.")
+        rec_db.title = title.strip()
+    if body is not None:
+        rec_db.body = body.strip() or None
+    if clear_deadline:
+        rec_db.deadline = None
+        rec_db.reminded_at = None
+    elif deadline is not None:
+        rec_db.deadline = _utc_naive(deadline)
+        rec_db.reminded_at = None
+    await db.commit()
+    return MsgResponse(msg="Yangilandi.")
+
+
+# ── DELETE /tasks/{id} — admin: topshiriqni o'chirish ─────────────────────────
+@router.delete("/{task_id}", response_model=MsgResponse)
+async def delete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    rec = await _load_task(db, task_id)
+    rec_db = await db.get(Record, rec.id)
+    rec_db.is_deleted = True
+    await db.commit()
+    return MsgResponse(msg="Telegramma o'chirildi.")
+
+
+# ── GET /tasks/{id}/export — admin: Excel (CSV UTF-8 BOM) hisobot ─────────────
+STATUS_UZ = {
+    AS.pending.value: "Yangi",
+    AS.submitted.value: "Tekshiruvda",
+    AS.accepted.value: "Qabul qilindi",
+    AS.returned.value: "Qaytarildi",
+}
+
+
+@router.get("/{task_id}/export")
+async def export_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    rec = await _load_task(db, task_id)
+    rows = sorted(rec.assignments, key=lambda a: (a.unit.sort_order if a.unit else 0, a.unit_id))
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";")
+    writer.writerow(["Telegramma", rec.title])
+    if rec.deadline:
+        writer.writerow(["Ijro muddati", _deadline_text(rec)])
+    writer.writerow([])
+    writer.writerow(["Bo'linma", "Holat", "Muddati o'tdi", "Kim bajardi", "Yuborilgan vaqt (UTC+5)", "Hisobot", "Qaytarish izohi"])
+    for a in rows:
+        sub_at = ""
+        if a.submitted_at:
+            sub_at = (_utc_naive(a.submitted_at) + timedelta(hours=5)).strftime("%d.%m.%Y %H:%M")
+        writer.writerow([
+            a.unit.name if a.unit else str(a.unit_id),
+            STATUS_UZ.get(a.status, a.status),
+            "Ha" if _overdue(rec, a) else "Yo'q",
+            a.submitter.full_name if a.submitter else "",
+            sub_at,
+            (a.report_text or "").replace("\n", " "),
+            (a.review_note or "").replace("\n", " "),
+        ])
+    data = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="ijro_{task_id}.csv"'},
+    )
+
+
+async def run_deadline_reminders(app) -> None:
+    """Muddatiga 2 soatdan kam qolgan yoki kechikkan topshiriqlar uchun 1 marta avtomatik eslatma."""
+    from types import SimpleNamespace
+    from ..database import AsyncSessionLocal
+
+    bot = getattr(app.state, "bot", None)
+    if not bot:
+        return
+    now = datetime.utcnow()
+    soon = now + timedelta(hours=2)
+    req = SimpleNamespace(app=app)
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(Record)
+            .options(selectinload(Record.assignments))
+            .where(
+                Record.is_deleted == False,
+                Record.deadline.is_not(None),
+                Record.reminded_at.is_(None),
+                Record.deadline <= soon,
+                Record.assignments.any(Assignment.status.in_([AS.pending.value, AS.returned.value])),
+            )
+        )
+        for rec in res.scalars().all():
+            targets = [a.unit_id for a in rec.assignments if a.status in (AS.pending.value, AS.returned.value)]
+            if not targets:
+                continue
+            dl = _deadline_text(rec)
+            late = _utc_naive(rec.deadline) < now
+            prefix = "🚨 <b>Muddat oʻtdi!</b>" if late else "⏰ <b>Muddat yaqinlashmoqda</b>"
+            text = f"{prefix}\n\n📜 {rec.title}\nMuddat: <b>{dl}</b>"
+            for uid in targets:
+                await _notify_unit(req, db, uid, text, webapp_path=f"/tasks/{rec.id}", btn_text="📋 Topshiriqni ochish")
+            rec.reminded_at = now
+        await db.commit()

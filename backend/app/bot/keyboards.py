@@ -3,10 +3,10 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def main_menu_kb(webapp_url: str) -> InlineKeyboardMarkup:
+def main_menu_kb(webapp_url: str, text: str = "📂 Mini App'ni ochish") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="📂 Mini App'ni ochish",
+        text=text,
         web_app=WebAppInfo(url=webapp_url),
     )
     return builder.as_markup()

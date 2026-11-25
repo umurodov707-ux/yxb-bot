@@ -5,6 +5,7 @@ __pycache__/
 .env
 *.db
 *.log
+.daily_svodka_date
 uploads/
 node_modules/
 .vite/

@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { getSvodka } from '../../api';
+import { Copy, Download, FileText } from 'lucide-react';
+import { getSvodka, sendSvodkaBot } from '../../api';
 import type { SvodkaRow } from '../../types';
 import { format } from 'date-fns';
 
 export default function SvodkaTab() {
-  const [group, setGroup] = useState<'PC' | 'PMS'>('PC');
+  const [group, setGroup] = useState<'PC' | 'PMS' | 'HEAD'>('PC');
   const [dateFrom, setDateFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [rows, setRows] = useState<SvodkaRow[]>([]);
   const [stats, setStats] = useState({ total: 0, submitted: 0, pending: 0 });
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [sendingPdf, setSendingPdf] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -30,19 +33,79 @@ export default function SvodkaTab() {
 
   const pct = stats.total ? Math.round((stats.submitted / stats.total) * 100) : 0;
 
+  const copySummary = async () => {
+    const label = group === 'PC' ? 'ПЧ' : group === 'PMS' ? 'ПМС/ОПМС' : 'Bo‘limlar';
+    const ok = rows.filter(r => r.has_submitted).map(r => `✅ ${r.department_name} (${r.record_count})`);
+    const no = rows.filter(r => !r.has_submitted).map(r => `⏳ ${r.department_name}`);
+    const text = [
+      `📊 Svodka (${label}) — ${dateFrom}${dateTo !== dateFrom ? ` .. ${dateTo}` : ''}`,
+      `Topshirdi: ${stats.submitted}/${stats.total} (${pct}%)`,
+      '',
+      ...(ok.length ? ['Topshirganlar:', ...ok, ''] : []),
+      ...(no.length ? ['Topshirmaganlar:', ...no] : []),
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  const downloadCsv = () => {
+    const lines = [
+      ["Bo'linma", 'Holat', 'Soni', 'Oxirgi vaqt'].join(';'),
+      ...rows.map(r => [
+        r.department_name,
+        r.has_submitted ? 'Topshirdi' : 'Topshirmadi',
+        String(r.record_count),
+        r.last_at ? format(new Date(r.last_at), 'dd.MM.yyyy HH:mm') : '',
+      ].join(';')),
+    ];
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `svodka_${group}_${dateFrom}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sendBotPdf = async () => {
+    setSendingPdf(true);
+    try {
+      await sendSvodkaBot();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } finally {
+      setSendingPdf(false);
+    }
+  };
+
   return (
     <div className="page">
-      <div className="page-header">
+      <div className="page-header flex items-center justify-between">
         <div className="page-title">📊 Topshirish nazorati (Svodka)</div>
+        {rows.length > 0 && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-ghost btn-sm" onClick={sendBotPdf} disabled={sendingPdf} title="Bot chatiga PDF yuborish">
+              <FileText size={14} /> {sendingPdf ? '…' : 'Botga PDF'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={copySummary} title="Telegramga nusxalash">
+              <Copy size={14} /> {copied ? 'Tayyor' : 'Nusxa'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={downloadCsv} title="Excel (CSV) yuklash">
+              <Download size={14} /> CSV
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
       <div className="card mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
         <div>
           <label className="form-label">Guruh</label>
-          <select value={group} onChange={e => setGroup(e.target.value as 'PC' | 'PMS')}>
+          <select value={group} onChange={e => setGroup(e.target.value as 'PC' | 'PMS' | 'HEAD')}>
             <option value="PC">ПЧ</option>
             <option value="PMS">ПМС / ОПМС</option>
+            <option value="HEAD">Bo'limlar (Фойдаланиш, Капитал...)</option>
           </select>
         </div>
         <div>

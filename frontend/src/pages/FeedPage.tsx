@@ -11,7 +11,7 @@ import type { Department, FeedRecord, RecordType } from '../types';
 import RecordCard, { TYPE_META } from '../components/ui/RecordCard';
 import AppHeader from '../components/ui/AppHeader';
 import { useAuth } from '../hooks/useAuth';
-import { parseDate } from '../lib/files';
+import { parseDate, compressImage } from '../lib/files';
 
 const FILTERS: ('' | RecordType)[] = ['', 'message', 'spravka', 'document', 'urgent', 'broadcast'];
 const SEND_TYPES: RecordType[] = ['message', 'spravka', 'document', 'urgent'];
@@ -156,7 +156,8 @@ export default function FeedPage({
       fd.append('record_type', type);
       fd.append('department_id', String(targetDept));
       if (threadUnitId) fd.append('thread_unit_id', String(threadUnitId));
-      files.forEach(f => fd.append('files', f));
+      const ready = await Promise.all(files.map(compressImage));
+      ready.forEach(f => fd.append('files', f));
       await createRecord(fd);
       setText(''); setFiles([]); setSendType('message');
       setToast('Yuborildi');
